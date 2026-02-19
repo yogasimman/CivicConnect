@@ -1,0 +1,84 @@
+// =============================================================================
+// Civic Connect – gRPC Proto: ChatService + AssistantService
+// =============================================================================
+// Used by service1 (gateway) to communicate with ai-worker for:
+//   - Threaded AI chat conversations
+//   - Single-turn assistant Q&A
+// =============================================================================
+
+syntax = "proto3";
+
+package civicconnect;
+
+option go_package = "./proto";
+
+// ── ChatService ─────────────────────────────────────────────────────────────
+
+service ChatService {
+  rpc GetThreadId (ThreadIdRequest) returns (ThreadIdResponse);
+  rpc Generate (ChatRequest) returns (ChatResponse);
+  rpc ConversationHistory (ConversationHistoryRequest) returns (ConversationHistoryResponse);
+  rpc ListConversations (ListConversationsRequest) returns (ListConversationsResponse);
+}
+
+message ThreadIdRequest {
+  string user_id = 1;
+}
+
+message ThreadIdResponse {
+  string thread_id = 1;
+}
+
+message ChatRequest {
+  string user_id   = 1;
+  string thread_id = 2;
+  string message   = 3;
+}
+
+message ChatResponse {
+  string response = 1;
+}
+
+message ConversationHistoryRequest {
+  string user_id   = 1;
+  string thread_id = 2;
+}
+
+message ChatMessage {
+  string role      = 1;
+  string content   = 2;
+  string timestamp = 3;
+}
+
+message ConversationHistoryResponse {
+  repeated ChatMessage messages = 1;
+}
+
+message ListConversationsRequest {
+  string user_id = 1;
+}
+
+message ConversationThread {
+  string thread_id  = 1;
+  string title      = 2;
+  string created_at = 3;
+  string updated_at = 4;
+}
+
+message ListConversationsResponse {
+  repeated ConversationThread threads = 1;
+}
+
+// ── AssistantService ────────────────────────────────────────────────────────
+
+service AssistantService {
+  rpc AssistantLLM (AssistantRequest) returns (AssistantResponse);
+}
+
+message AssistantRequest {
+  string query = 1;
+}
+
+message AssistantResponse {
+  string response = 1;
+}

@@ -1,0 +1,10 @@
+# =============================================================================
+# Civic Connect – Kubernetes Namespace
+# =============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: civic-connect
+  labels:
+    app.kubernetes.io/part-of: civic-connect
+    environment: development

@@ -1,0 +1,70 @@
+# =============================================================================
+# Civic Connect – NGINX Ingress Controller Config
+# =============================================================================
+# Prerequisites:
+#   minikube addons enable ingress
+#   Add "127.0.0.1 civic-connect.local" to /etc/hosts (or C:\Windows\System32\drivers\etc\hosts)
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: civic-ingress
+  namespace: civic-connect
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/rate-limit: "30"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/websocket-services: chatbot-svc
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: civic-connect.local
+      http:
+        paths:
+          # ── Admin Panel (Vue.js) ──────────────────────────────────────────
+          - path: /()(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: admin-panel-svc
+                port:
+                  number: 80
+
+          # ── Admin Service API ─────────────────────────────────────────────
+          - path: /api/v1/admin(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: admin-svc
+                port:
+                  number: 8081
+
+          # ── Content Service API ───────────────────────────────────────────
+          - path: /api/v1/content(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: content-svc
+                port:
+                  number: 8082
+
+          # ── Complaint Service API ─────────────────────────────────────────
+          - path: /api/v1/complaints(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: complaint-svc
+                port:
+                  number: 8083
+
+          # ── Chatbot WebSocket ─────────────────────────────────────────────
+          - path: /ws(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: chatbot-svc
+                port:
+                  number: 8084

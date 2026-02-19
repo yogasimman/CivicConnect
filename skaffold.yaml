@@ -1,0 +1,77 @@
+# =============================================================================
+# Civic Connect – Skaffold Config (Local K8s Development)
+# =============================================================================
+# Usage: skaffold dev --port-forward
+# =============================================================================
+
+apiVersion: skaffold/v4beta11
+kind: Config
+metadata:
+  name: civic-connect
+
+build:
+  artifacts:
+    - image: civic-connect/admin-service
+      context: admin-service
+      docker:
+        dockerfile: Dockerfile
+    - image: civic-connect/content-service
+      context: .
+      docker:
+        dockerfile: content-service/Dockerfile
+    - image: civic-connect/complaint-service
+      context: complaint-service
+      docker:
+        dockerfile: Dockerfile
+    - image: civic-connect/ai-worker
+      context: .
+      docker:
+        dockerfile: ai-worker/Dockerfile
+    - image: civic-connect/chatbot-service
+      context: chatbot-service
+      docker:
+        dockerfile: Dockerfile
+    - image: civic-connect/admin-panel
+      context: admin-panel
+      docker:
+        dockerfile: Dockerfile
+  local:
+    push: false # Use local images with Minikube
+
+manifests:
+  rawYaml:
+    - infrastructure/k8s/namespace.yaml
+    - infrastructure/k8s/secrets.yaml
+    - infrastructure/k8s/postgres.yaml
+    - infrastructure/k8s/rabbitmq.yaml
+    - infrastructure/k8s/minio.yaml
+    - infrastructure/k8s/redis.yaml
+    - infrastructure/k8s/services.yaml
+    - infrastructure/k8s/ingress.yaml
+
+portForward:
+  - resourceType: service
+    resourceName: admin-svc
+    namespace: civic-connect
+    port: 8081
+    localPort: 8081
+  - resourceType: service
+    resourceName: content-svc
+    namespace: civic-connect
+    port: 8082
+    localPort: 8082
+  - resourceType: service
+    resourceName: complaint-svc
+    namespace: civic-connect
+    port: 8083
+    localPort: 8083
+  - resourceType: service
+    resourceName: chatbot-svc
+    namespace: civic-connect
+    port: 8084
+    localPort: 8084
+  - resourceType: service
+    resourceName: admin-panel-svc
+    namespace: civic-connect
+    port: 80
+    localPort: 3000

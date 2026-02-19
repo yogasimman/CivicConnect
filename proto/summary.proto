@@ -1,0 +1,25 @@
+// =============================================================================
+// Civic Connect – gRPC Proto: ContentUpdater Service
+// =============================================================================
+// Used by ai-worker to push AI-generated summaries back to content-service
+// =============================================================================
+
+syntax = "proto3";
+
+package civicconnect;
+
+option go_package = "./proto";
+
+service ContentUpdater {
+  rpc UpdateSummary (SummaryRequest) returns (SummaryResponse);
+}
+
+message SummaryRequest {
+  int64  post_id      = 1;
+  string summary_text = 2;
+}
+
+message SummaryResponse {
+  bool   success = 1;
+  string message = 2;
+}
