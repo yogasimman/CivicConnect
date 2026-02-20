@@ -19,19 +19,20 @@ metadata:
   name: postgres-init
   namespace: civic-connect
 data:
-  init.sql: |
-    CREATE DATABASE admin_db;
-    CREATE DATABASE content_db;
-    CREATE DATABASE complaint_db;
-    \c complaint_db;
-    CREATE EXTENSION IF NOT EXISTS postgis;
-    CREATE EXTENSION IF NOT EXISTS postgis_topology;
-    \c admin_db;
-    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-    \c content_db;
-    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-    \c complaint_db;
-    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+  init.sh: |
+    #!/bin/bash
+    set -e
+    echo "Creating additional databases..."
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+      SELECT 'CREATE DATABASE content_db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'content_db')\gexec
+      SELECT 'CREATE DATABASE complaint_db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'complaint_db')\gexec
+    EOSQL
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "admin_db" -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "content_db" -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "complaint_db" -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "complaint_db" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "complaint_db" -c "CREATE EXTENSION IF NOT EXISTS postgis_topology;"
+    echo "All databases and extensions initialized successfully."
 
 ---
 apiVersion: apps/v1

@@ -497,6 +497,32 @@ func uploadActionImageHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"image_url": imageURL})
 }
 
+// ── Reassignment (for "Others" category) ────────────────────────────────────
+
+func reassignComplaintHandler(c *gin.Context) {
+	id := c.Param("id")
+	var complaint Complaint
+	if err := db.First(&complaint, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "complaint not found"})
+		return
+	}
+	var body struct {
+		DepartmentID uint   `json:"department_id" binding:"required"`
+		Category     string `json:"category"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	complaint.DepartmentID = &body.DepartmentID
+	if body.Category != "" {
+		complaint.Category = body.Category
+	}
+	complaint.Version++
+	db.Save(&complaint)
+	c.JSON(http.StatusOK, complaint)
+}
+
 // ── Main ────────────────────────────────────────────────────────────────────
 
 func main() {
@@ -530,6 +556,9 @@ func main() {
 	// Actions Taken
 	r.GET("/complaints/:id/actions", getActionsHandler)
 	r.POST("/complaints/:id/actions", addActionHandler)
+
+	// Reassignment (Manager only — for "Others" category)
+	r.PUT("/complaints/:id/reassign", reassignComplaintHandler)
 
 	// Nearby Search
 	r.GET("/complaints/nearby", nearbyComplaintsHandler)

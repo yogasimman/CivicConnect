@@ -6,7 +6,12 @@
 //
 // Domains: Authentication, User Management, Government Entities,
 //          Officials, Follow System, Departments, Admin Accounts,
-//          Notifications, Government Settings
+//          Notifications, Government Settings, Article Categories
+//
+// Role Hierarchy:
+//   SuperAdmin → Creates municipalities, managers, other super_admins
+//   Manager    → Creates departments, dept_managers, manages complaints/articles/posts
+//   DeptManager → Manages own department complaints/articles/posts
 // =============================================================================
 
 package main
@@ -16,9 +21,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -32,13 +39,12 @@ import (
 
 // ── Models ──────────────────────────────────────────────────────────────────
 
-// User — citizen or government role, Aadhar-based identity
 type User struct {
 	ID            uint      `gorm:"primaryKey" json:"id"`
 	Name          string    `gorm:"not null" json:"name"`
 	Email         string    `gorm:"uniqueIndex;not null" json:"email"`
 	PasswordHash  string    `gorm:"column:password_hash;not null" json:"-"`
-	Role          string    `gorm:"not null;default:public" json:"role"` // public | government
+	Role          string    `gorm:"not null;default:public" json:"role"`
 	AadharNo      string    `gorm:"uniqueIndex;not null" json:"aadhar_no"`
 	ProofDocument string    `json:"proof_document,omitempty"`
 	Location      string    `json:"location,omitempty"`
@@ -47,7 +53,6 @@ type User struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
-// Notification — fetch-and-delete pattern
 type Notification struct {
 	ID        uint            `gorm:"primaryKey" json:"id"`
 	UserID    uint            `gorm:"index;not null" json:"user_id"`
@@ -57,48 +62,56 @@ type Notification struct {
 	CreatedAt time.Time       `json:"created_at"`
 }
 
-// Government — central or state level entity
 type Government struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
 	Name      string    `gorm:"not null" json:"name"`
-	Type      string    `gorm:"not null" json:"type"` // central | state
+	Type      string    `gorm:"not null" json:"type"`
 	State     string    `json:"state,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// LocalGovernment — municipality / corporation
 type LocalGovernment struct {
-	ID           uint   `gorm:"primaryKey" json:"id"`
-	Name         string `gorm:"not null" json:"name"`
-	Jurisdiction string `json:"jurisdiction,omitempty"`
-	Email        string `json:"email,omitempty"`
-	Phone        string `json:"phone,omitempty"`
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	Name         string    `gorm:"not null" json:"name"`
+	Jurisdiction string    `json:"jurisdiction,omitempty"`
+	State        string    `json:"state,omitempty"`
+	Email        string    `json:"email,omitempty"`
+	Phone        string    `json:"phone,omitempty"`
+	LogoURL      string    `json:"logo_url,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-// Department — under a local government
 type Department struct {
-	ID           uint   `gorm:"primaryKey" json:"id"`
-	Name         string `gorm:"not null" json:"name"`
-	Email        string `json:"email,omitempty"`
-	Phone        string `json:"phone,omitempty"`
-	Services     string `gorm:"type:text" json:"services,omitempty"`
-	GovernmentID uint   `gorm:"index;not null" json:"government_id"`
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	Name         string    `gorm:"not null" json:"name"`
+	Email        string    `json:"email,omitempty"`
+	Phone        string    `json:"phone,omitempty"`
+	Services     string    `gorm:"type:text" json:"services,omitempty"`
+	LogoURL      string    `json:"logo_url,omitempty"`
+	GovernmentID uint      `gorm:"index;not null" json:"government_id"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-// GovernmentAdmin — admin user for the government web portal
 type GovernmentAdmin struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
 	GovernmentID uint      `gorm:"index;not null" json:"government_id"`
 	Name         string    `gorm:"not null" json:"name"`
 	Email        string    `gorm:"uniqueIndex;not null" json:"email"`
 	PasswordHash string    `gorm:"column:password_hash;not null" json:"-"`
-	Role         string    `gorm:"not null;default:dept_manager" json:"role"` // super_admin | manager | dept_manager
+	Role         string    `gorm:"not null;default:dept_manager" json:"role"`
 	DepartmentID *uint     `json:"department_id,omitempty"`
 	LastLogin    time.Time `json:"last_login,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 
-// GovernmentOfficial — a government officer linked to a user account
+type ArticleCategory struct {
+	ID           uint   `gorm:"primaryKey" json:"id"`
+	Name         string `gorm:"not null" json:"name"`
+	GovernmentID uint   `gorm:"index;not null" json:"government_id"`
+}
+
 type GovernmentOfficial struct {
 	ID         uint   `gorm:"primaryKey" json:"id"`
 	UserID     uint   `gorm:"uniqueIndex;not null" json:"user_id"`
@@ -107,7 +120,6 @@ type GovernmentOfficial struct {
 	User       User   `gorm:"foreignKey:UserID" json:"user,omitempty"`
 }
 
-// Follower — citizen follows a government official
 type Follower struct {
 	ID         uint      `gorm:"primaryKey" json:"id"`
 	UserID     uint      `gorm:"not null" json:"user_id"`
@@ -115,7 +127,6 @@ type Follower struct {
 	FollowedAt time.Time `gorm:"autoCreateTime" json:"followed_at"`
 }
 
-// GovernmentFollow — citizen follows a local government
 type GovernmentFollow struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
 	UserID       uint      `gorm:"not null" json:"user_id"`
@@ -149,7 +160,6 @@ func connectPostgres() {
 		env("DB_PASSWORD", "civic_secret_2026"),
 		env("DB_NAME", "admin_db"),
 	)
-
 	var err error
 	for i := 0; i < 30; i++ {
 		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
@@ -169,15 +179,11 @@ func connectPostgres() {
 		&Government{}, &LocalGovernment{},
 		&Department{}, &GovernmentAdmin{},
 		&GovernmentOfficial{}, &Follower{},
-		&GovernmentFollow{},
+		&GovernmentFollow{}, &ArticleCategory{},
 	)
 
-	// Unique constraint: one follow per user-official pair
 	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_followers_unique ON followers(user_id, official_id)")
-	// Unique constraint: one follow per user-government pair
 	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_gov_follow_unique ON government_follows(user_id, government_id)")
-
-	// Migrate existing department_admin roles to dept_manager
 	db.Exec("UPDATE government_admins SET role = 'dept_manager' WHERE role = 'department_admin'")
 }
 
@@ -186,7 +192,6 @@ func connectRabbitMQ() {
 		fmt.Sprintf("amqp://%s:%s@localhost:5672/",
 			env("RABBITMQ_USER", "civic_rabbit"),
 			env("RABBITMQ_PASS", "rabbit_secret_2026")))
-
 	var err error
 	for i := 0; i < 30; i++ {
 		amqpConn, err = amqp.Dial(url)
@@ -207,10 +212,8 @@ func connectRedis() {
 		Addr:     env("REDIS_ADDR", "localhost:6379"),
 		Password: env("REDIS_PASSWORD", "redis_secret_2026"),
 	})
-
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-
 	for i := 0; i < 30; i++ {
 		if err := rdb.Ping(ctx).Err(); err == nil {
 			break
@@ -250,7 +253,6 @@ func generateAdminToken(admin GovernmentAdmin) (string, error) {
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(jwtSecret)
 }
 
-// authMiddleware — validates Bearer token for citizen/government users
 func authMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenStr := c.GetHeader("Authorization")
@@ -272,7 +274,6 @@ func authMiddleware() gin.HandlerFunc {
 	}
 }
 
-// adminAuthMiddleware — validates Bearer token for government admin portal
 func adminAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenStr := c.GetHeader("Authorization")
@@ -288,6 +289,10 @@ func adminAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 		claims := token.Claims.(jwt.MapClaims)
+		if _, ok := claims["admin_id"]; !ok {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "not an admin token"})
+			return
+		}
 		c.Set("admin_id", claims["admin_id"])
 		c.Set("government_id", claims["government_id"])
 		c.Set("admin_role", claims["role"])
@@ -310,10 +315,14 @@ func roleRequired(roles ...string) gin.HandlerFunc {
 }
 
 func adminRoleRequired(roles ...string) gin.HandlerFunc {
+	// Role hierarchy: super_admin > manager > dept_manager
+	hierarchy := map[string]int{"super_admin": 3, "manager": 2, "dept_manager": 1}
 	return func(c *gin.Context) {
 		role, _ := c.Get("admin_role")
+		roleStr, _ := role.(string)
+		callerLevel := hierarchy[roleStr]
 		for _, r := range roles {
-			if r == role {
+			if callerLevel >= hierarchy[r] {
 				c.Next()
 				return
 			}
@@ -332,6 +341,45 @@ func getUserID(c *gin.Context) uint {
 		}
 	}
 	return 0
+}
+
+func getAdminID(c *gin.Context) uint {
+	if v, ok := c.Get("admin_id"); ok {
+		switch id := v.(type) {
+		case float64:
+			return uint(id)
+		case uint:
+			return id
+		}
+	}
+	return 0
+}
+
+func getGovID(c *gin.Context) uint {
+	if v, ok := c.Get("government_id"); ok {
+		switch id := v.(type) {
+		case float64:
+			return uint(id)
+		case uint:
+			return id
+		}
+	}
+	return 0
+}
+
+func getDeptID(c *gin.Context) *uint {
+	if v, ok := c.Get("department_id"); ok {
+		switch id := v.(type) {
+		case float64:
+			u := uint(id)
+			if u > 0 {
+				return &u
+			}
+		case *uint:
+			return id
+		}
+	}
+	return nil
 }
 
 // ── Auth Handlers ───────────────────────────────────────────────────────────
@@ -360,13 +408,9 @@ func registerHandler(c *gin.Context) {
 	}
 	hash, _ := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
 	user := User{
-		Name:          body.Name,
-		Email:         body.Email,
-		PasswordHash:  string(hash),
-		Role:          role,
-		AadharNo:      body.AadharNo,
-		ProofDocument: body.ProofDocument,
-		Location:      body.Location,
+		Name: body.Name, Email: body.Email, PasswordHash: string(hash),
+		Role: role, AadharNo: body.AadharNo,
+		ProofDocument: body.ProofDocument, Location: body.Location,
 	}
 	if err := db.Create(&user).Error; err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "email or aadhar already registered"})
@@ -462,7 +506,6 @@ func getNotificationsHandler(c *gin.Context) {
 	uid := getUserID(c)
 	var notifications []Notification
 	db.Where("user_id = ?", uid).Order("created_at DESC").Find(&notifications)
-	// Fetch-and-delete pattern
 	db.Where("user_id = ?", uid).Delete(&Notification{})
 	c.JSON(http.StatusOK, notifications)
 }
@@ -538,17 +581,136 @@ func updateLocalGovernmentHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gov)
 }
 
+// ── Municipality CRUD (SuperAdmin only) ─────────────────────────────────────
+
+func createMunicipalityHandler(c *gin.Context) {
+	var body struct {
+		Name         string `json:"name" binding:"required"`
+		Jurisdiction string `json:"jurisdiction"`
+		State        string `json:"state"`
+		Email        string `json:"email"`
+		Phone        string `json:"phone"`
+		LogoURL      string `json:"logo_url"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	gov := LocalGovernment{
+		Name: body.Name, Jurisdiction: body.Jurisdiction, State: body.State,
+		Email: body.Email, Phone: body.Phone, LogoURL: body.LogoURL,
+	}
+	if err := db.Create(&gov).Error; err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "municipality already exists"})
+		return
+	}
+	c.JSON(http.StatusCreated, gov)
+}
+
+func listMunicipalitiesHandler(c *gin.Context) {
+	var govs []LocalGovernment
+	db.Order("name ASC").Find(&govs)
+	type MuniWithCounts struct {
+		LocalGovernment
+		ManagerCount int64 `json:"manager_count"`
+		DeptCount    int64 `json:"department_count"`
+	}
+	var result []MuniWithCounts
+	for _, g := range govs {
+		var mgrCount, deptCount int64
+		db.Model(&GovernmentAdmin{}).Where("government_id = ? AND role = ?", g.ID, "manager").Count(&mgrCount)
+		db.Model(&Department{}).Where("government_id = ?", g.ID).Count(&deptCount)
+		result = append(result, MuniWithCounts{LocalGovernment: g, ManagerCount: mgrCount, DeptCount: deptCount})
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+func updateMunicipalityHandler(c *gin.Context) {
+	var gov LocalGovernment
+	if err := db.First(&gov, c.Param("id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "municipality not found"})
+		return
+	}
+	var body struct {
+		Name         string `json:"name"`
+		Jurisdiction string `json:"jurisdiction"`
+		State        string `json:"state"`
+		Email        string `json:"email"`
+		Phone        string `json:"phone"`
+		LogoURL      string `json:"logo_url"`
+	}
+	c.ShouldBindJSON(&body)
+	if body.Name != "" {
+		gov.Name = body.Name
+	}
+	if body.Jurisdiction != "" {
+		gov.Jurisdiction = body.Jurisdiction
+	}
+	if body.State != "" {
+		gov.State = body.State
+	}
+	if body.Email != "" {
+		gov.Email = body.Email
+	}
+	if body.Phone != "" {
+		gov.Phone = body.Phone
+	}
+	if body.LogoURL != "" {
+		gov.LogoURL = body.LogoURL
+	}
+	db.Save(&gov)
+	c.JSON(http.StatusOK, gov)
+}
+
+func deleteMunicipalityHandler(c *gin.Context) {
+	id := c.Param("id")
+	var deptCount int64
+	db.Model(&Department{}).Where("government_id = ?", id).Count(&deptCount)
+	if deptCount > 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "cannot delete municipality with existing departments"})
+		return
+	}
+	db.Delete(&LocalGovernment{}, id)
+	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+}
+
 // ── Department Handlers ─────────────────────────────────────────────────────
 
 func listDepartmentsHandler(c *gin.Context) {
 	govID := c.Query("government_id")
+	role, _ := c.Get("admin_role")
 	var depts []Department
 	q := db
 	if govID != "" {
 		q = q.Where("government_id = ?", govID)
+	} else if role != "super_admin" {
+		q = q.Where("government_id = ?", getGovID(c))
 	}
-	q.Find(&depts)
-	c.JSON(http.StatusOK, depts)
+	if role == "dept_manager" {
+		deptID := getDeptID(c)
+		if deptID != nil {
+			q = q.Where("id = ?", *deptID)
+		}
+	}
+	q.Order("name ASC").Find(&depts)
+
+	type DeptWithManagers struct {
+		Department
+		ManagerCount int64  `json:"manager_count"`
+		GovName      string `json:"government_name,omitempty"`
+	}
+	var result []DeptWithManagers
+	for _, d := range depts {
+		var mgrCount int64
+		db.Model(&GovernmentAdmin{}).Where("department_id = ? AND role = ?", d.ID, "dept_manager").Count(&mgrCount)
+		item := DeptWithManagers{Department: d, ManagerCount: mgrCount}
+		var gov LocalGovernment
+		if db.First(&gov, d.GovernmentID).Error == nil {
+			item.GovName = gov.Name
+		}
+		result = append(result, item)
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 func getDepartmentHandler(c *gin.Context) {
@@ -561,10 +723,21 @@ func getDepartmentHandler(c *gin.Context) {
 }
 
 func createDepartmentHandler(c *gin.Context) {
-	var dept Department
-	if err := c.ShouldBindJSON(&dept); err != nil {
+	govID := getGovID(c)
+	var body struct {
+		Name     string `json:"name" binding:"required"`
+		Email    string `json:"email"`
+		Phone    string `json:"phone"`
+		Services string `json:"services"`
+		LogoURL  string `json:"logo_url"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	dept := Department{
+		Name: body.Name, Email: body.Email, Phone: body.Phone,
+		Services: body.Services, LogoURL: body.LogoURL, GovernmentID: govID,
 	}
 	if err := db.Create(&dept).Error; err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "department already exists"})
@@ -579,13 +752,48 @@ func updateDepartmentHandler(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "department not found"})
 		return
 	}
-	c.ShouldBindJSON(&dept)
+	if dept.GovernmentID != getGovID(c) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "cannot modify departments in other municipalities"})
+		return
+	}
+	var body struct {
+		Name     string `json:"name"`
+		Email    string `json:"email"`
+		Phone    string `json:"phone"`
+		Services string `json:"services"`
+		LogoURL  string `json:"logo_url"`
+	}
+	c.ShouldBindJSON(&body)
+	if body.Name != "" {
+		dept.Name = body.Name
+	}
+	if body.Email != "" {
+		dept.Email = body.Email
+	}
+	if body.Phone != "" {
+		dept.Phone = body.Phone
+	}
+	if body.Services != "" {
+		dept.Services = body.Services
+	}
+	if body.LogoURL != "" {
+		dept.LogoURL = body.LogoURL
+	}
 	db.Save(&dept)
 	c.JSON(http.StatusOK, dept)
 }
 
 func deleteDepartmentHandler(c *gin.Context) {
-	db.Delete(&Department{}, c.Param("id"))
+	var dept Department
+	if err := db.First(&dept, c.Param("id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "department not found"})
+		return
+	}
+	if dept.GovernmentID != getGovID(c) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "cannot delete departments in other municipalities"})
+		return
+	}
+	db.Delete(&dept)
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 
@@ -680,7 +888,6 @@ func getUserFollowingHandler(c *gin.Context) {
 	userID := c.Param("user_id")
 	var followers []Follower
 	db.Where("user_id = ?", userID).Find(&followers)
-
 	var officialIDs []uint
 	for _, f := range followers {
 		officialIDs = append(officialIDs, f.OfficialID)
@@ -714,47 +921,73 @@ func adminLoginHandler(c *gin.Context) {
 	}
 	db.Model(&admin).Update("last_login", time.Now())
 	token, _ := generateAdminToken(admin)
-	c.JSON(http.StatusOK, gin.H{"token": token, "admin": admin})
+
+	var gov LocalGovernment
+	db.First(&gov, admin.GovernmentID)
+	var deptName string
+	if admin.DepartmentID != nil {
+		var dept Department
+		if db.First(&dept, *admin.DepartmentID).Error == nil {
+			deptName = dept.Name
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"token": token, "admin": admin,
+		"government_name": gov.Name, "government_logo": gov.LogoURL,
+		"department_name": deptName,
+	})
 }
 
 func adminMeHandler(c *gin.Context) {
-	adminID, _ := c.Get("admin_id")
+	adminID := getAdminID(c)
 	var admin GovernmentAdmin
 	if err := db.First(&admin, adminID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "admin not found"})
 		return
 	}
-	c.JSON(http.StatusOK, admin)
+	var gov LocalGovernment
+	db.First(&gov, admin.GovernmentID)
+	var deptName string
+	if admin.DepartmentID != nil {
+		var dept Department
+		if db.First(&dept, *admin.DepartmentID).Error == nil {
+			deptName = dept.Name
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"id": admin.ID, "government_id": admin.GovernmentID,
+		"name": admin.Name, "email": admin.Email, "role": admin.Role,
+		"department_id": admin.DepartmentID, "department_name": deptName,
+		"last_login": admin.LastLogin, "created_at": admin.CreatedAt,
+		"government_name": gov.Name, "government_logo": gov.LogoURL,
+	})
 }
 
 func dashboardHandler(c *gin.Context) {
-	govID, _ := c.Get("government_id")
+	govID := getGovID(c)
 	role, _ := c.Get("admin_role")
-	deptID, _ := c.Get("department_id")
-
+	deptID := getDeptID(c)
 	ctx := context.Background()
-
-	result := gin.H{
-		"role": role,
-	}
+	result := gin.H{"role": role}
 
 	switch role {
 	case "super_admin":
-		var govCount, deptCount, adminCount, userCount int64
+		var govCount, mgrCount, deptCount, userCount int64
 		db.Model(&LocalGovernment{}).Count(&govCount)
-		db.Model(&Department{}).Where("government_id = ?", govID).Count(&deptCount)
-		db.Model(&GovernmentAdmin{}).Where("government_id = ?", govID).Count(&adminCount)
+		db.Model(&GovernmentAdmin{}).Where("role = ?", "manager").Count(&mgrCount)
+		db.Model(&Department{}).Count(&deptCount)
 		db.Model(&User{}).Count(&userCount)
-		result["governments"] = govCount
+		result["municipalities"] = govCount
+		result["managers"] = mgrCount
 		result["departments"] = deptCount
-		result["admins"] = adminCount
 		result["users"] = userCount
 
 	case "manager":
-		var deptCount int64
+		var deptCount, deptMgrCount int64
 		db.Model(&Department{}).Where("government_id = ?", govID).Count(&deptCount)
+		db.Model(&GovernmentAdmin{}).Where("government_id = ? AND role = ?", govID, "dept_manager").Count(&deptMgrCount)
 		result["departments"] = deptCount
-		// Complaint stats from Redis cache
+		result["dept_managers"] = deptMgrCount
 		pendingStr, _ := rdb.Get(ctx, fmt.Sprintf("dashboard:%v:pending", govID)).Result()
 		inProgressStr, _ := rdb.Get(ctx, fmt.Sprintf("dashboard:%v:in_progress", govID)).Result()
 		resolvedStr, _ := rdb.Get(ctx, fmt.Sprintf("dashboard:%v:resolved", govID)).Result()
@@ -766,8 +999,13 @@ func dashboardHandler(c *gin.Context) {
 		result["resolved_complaints"] = resolved
 
 	case "dept_manager":
-		result["department_id"] = deptID
-		// Department-specific complaint stats from Redis
+		if deptID != nil {
+			var dept Department
+			if db.First(&dept, *deptID).Error == nil {
+				result["department_name"] = dept.Name
+			}
+			result["department_id"] = *deptID
+		}
 		pendingStr, _ := rdb.Get(ctx, fmt.Sprintf("dashboard:%v:dept:%v:pending", govID, deptID)).Result()
 		resolvedStr, _ := rdb.Get(ctx, fmt.Sprintf("dashboard:%v:dept:%v:resolved", govID, deptID)).Result()
 		pending, _ := strconv.ParseInt(pendingStr, 10, 64)
@@ -775,55 +1013,110 @@ func dashboardHandler(c *gin.Context) {
 		result["pending_complaints"] = pending
 		result["resolved_complaints"] = resolved
 	}
-
 	c.JSON(http.StatusOK, result)
 }
 
 func listAdminsHandler(c *gin.Context) {
-	govID, _ := c.Get("government_id")
+	govID := getGovID(c)
+	role, _ := c.Get("admin_role")
 	var admins []GovernmentAdmin
-	db.Where("government_id = ?", govID).Find(&admins)
-	c.JSON(http.StatusOK, admins)
+	switch role {
+	case "super_admin":
+		db.Where("role IN ?", []string{"manager", "super_admin"}).Order("role ASC, name ASC").Find(&admins)
+	case "manager":
+		db.Where("government_id = ? AND role = ?", govID, "dept_manager").Order("name ASC").Find(&admins)
+	default:
+		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient permissions"})
+		return
+	}
+	type AdminWithDetails struct {
+		GovernmentAdmin
+		GovernmentName string `json:"government_name"`
+		DepartmentName string `json:"department_name,omitempty"`
+	}
+	var result []AdminWithDetails
+	for _, a := range admins {
+		detail := AdminWithDetails{GovernmentAdmin: a}
+		var gov LocalGovernment
+		if db.First(&gov, a.GovernmentID).Error == nil {
+			detail.GovernmentName = gov.Name
+		}
+		if a.DepartmentID != nil {
+			var dept Department
+			if db.First(&dept, *a.DepartmentID).Error == nil {
+				detail.DepartmentName = dept.Name
+			}
+		}
+		result = append(result, detail)
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 func createAdminHandler(c *gin.Context) {
-	govID, _ := c.Get("government_id")
 	callerRole, _ := c.Get("admin_role")
+	callerGovID := getGovID(c)
 	var body struct {
 		Name         string `json:"name" binding:"required"`
 		Email        string `json:"email" binding:"required,email"`
 		Password     string `json:"password" binding:"required,min=6"`
 		Role         string `json:"role" binding:"required"`
+		GovernmentID uint   `json:"government_id"`
 		DepartmentID *uint  `json:"department_id"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	// Validate role
 	validRoles := map[string]bool{"super_admin": true, "manager": true, "dept_manager": true}
 	if !validRoles[body.Role] {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role, must be: super_admin, manager, or dept_manager"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role"})
 		return
 	}
-	// Manager can only create dept_manager accounts
-	if callerRole == "manager" && body.Role != "dept_manager" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "managers can only create department manager accounts"})
+	switch callerRole {
+	case "super_admin":
+		if body.Role == "dept_manager" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "super admins cannot create department managers; managers should do this"})
+			return
+		}
+		if body.Role == "manager" && body.GovernmentID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "government_id is required when creating a manager"})
+			return
+		}
+	case "manager":
+		if body.Role != "dept_manager" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "managers can only create department manager accounts"})
+			return
+		}
+		if body.DepartmentID == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "department_id is required for dept_manager role"})
+			return
+		}
+		var dept Department
+		if err := db.First(&dept, *body.DepartmentID).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "department not found"})
+			return
+		}
+		if dept.GovernmentID != callerGovID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "department does not belong to your municipality"})
+			return
+		}
+	default:
+		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient permissions"})
 		return
 	}
-	// dept_manager must have a department
-	if body.Role == "dept_manager" && body.DepartmentID == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "department_id is required for dept_manager role"})
-		return
+
+	govID := body.GovernmentID
+	if callerRole.(string) == "manager" {
+		govID = callerGovID
 	}
+	if callerRole.(string) == "super_admin" && body.Role == "super_admin" {
+		govID = callerGovID
+	}
+
 	hash, _ := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
 	admin := GovernmentAdmin{
-		GovernmentID: uint(govID.(float64)),
-		Name:         body.Name,
-		Email:        body.Email,
-		PasswordHash: string(hash),
-		Role:         body.Role,
-		DepartmentID: body.DepartmentID,
+		GovernmentID: govID, Name: body.Name, Email: body.Email,
+		PasswordHash: string(hash), Role: body.Role, DepartmentID: body.DepartmentID,
 	}
 	if err := db.Create(&admin).Error; err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "admin email already exists"})
@@ -858,12 +1151,38 @@ func updateAdminHandler(c *gin.Context) {
 }
 
 func deleteAdminHandler(c *gin.Context) {
-	db.Delete(&GovernmentAdmin{}, c.Param("id"))
+	callerRole, _ := c.Get("admin_role")
+	callerGovID := getGovID(c)
+	var admin GovernmentAdmin
+	if err := db.First(&admin, c.Param("id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "admin not found"})
+		return
+	}
+	switch callerRole {
+	case "super_admin":
+		if admin.ID == getAdminID(c) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "cannot delete yourself"})
+			return
+		}
+	case "manager":
+		if admin.Role != "dept_manager" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "managers can only delete department managers"})
+			return
+		}
+		if admin.GovernmentID != callerGovID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "cannot delete admins from other municipalities"})
+			return
+		}
+	default:
+		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient permissions"})
+		return
+	}
+	db.Delete(&admin)
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 
 func adminChangePasswordHandler(c *gin.Context) {
-	adminID, _ := c.Get("admin_id")
+	adminID := getAdminID(c)
 	var body struct {
 		OldPassword string `json:"old_password" binding:"required"`
 		NewPassword string `json:"new_password" binding:"required,min=6"`
@@ -886,22 +1205,59 @@ func adminChangePasswordHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "password changed"})
 }
 
-// ── Session Verify (inter-service) ──────────────────────────────────────────
+// ── Article Category Handlers ───────────────────────────────────────────────
+
+func listArticleCategoriesHandler(c *gin.Context) {
+	govID := getGovID(c)
+	var cats []ArticleCategory
+	db.Where("government_id = ?", govID).Order("name ASC").Find(&cats)
+	c.JSON(http.StatusOK, cats)
+}
+
+func createArticleCategoryHandler(c *gin.Context) {
+	govID := getGovID(c)
+	var body struct {
+		Name string `json:"name" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	cat := ArticleCategory{Name: body.Name, GovernmentID: govID}
+	if err := db.Create(&cat).Error; err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "category already exists"})
+		return
+	}
+	c.JSON(http.StatusCreated, cat)
+}
+
+func deleteArticleCategoryHandler(c *gin.Context) {
+	govID := getGovID(c)
+	var cat ArticleCategory
+	if err := db.First(&cat, c.Param("id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "category not found"})
+		return
+	}
+	if cat.GovernmentID != govID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "cannot delete categories from other municipalities"})
+		return
+	}
+	db.Delete(&cat)
+	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+}
+
+// ── Session Verify ──────────────────────────────────────────────────────────
 
 func sessionVerifyHandler(c *gin.Context) {
-	// Called by other services to validate a user token
 	c.JSON(http.StatusOK, gin.H{
-		"valid":   true,
-		"user_id": c.GetFloat64("user_id"),
-		"role":    c.GetString("role"),
+		"valid": true, "user_id": c.GetFloat64("user_id"), "role": c.GetString("role"),
 	})
 }
 
-// ── Government Follow Handlers (citizens follow local governments) ──────────
+// ── Government Follow Handlers ──────────────────────────────────────────────
 
 func followGovernmentHandler(c *gin.Context) {
 	govID, _ := strconv.Atoi(c.Param("gov_id"))
-	// Verify government exists
 	var gov LocalGovernment
 	if err := db.First(&gov, govID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "government not found"})
@@ -932,7 +1288,6 @@ func getUserFollowedGovernmentsHandler(c *gin.Context) {
 	userID := c.Param("user_id")
 	var follows []GovernmentFollow
 	db.Where("user_id = ?", userID).Find(&follows)
-
 	var govIDs []uint
 	for _, f := range follows {
 		govIDs = append(govIDs, f.GovernmentID)
@@ -952,7 +1307,6 @@ func searchLocalGovernmentsHandler(c *gin.Context) {
 	} else {
 		db.Find(&govs)
 	}
-	// Add follower count and follow status for current user
 	uid := getUserID(c)
 	type GovWithMeta struct {
 		LocalGovernment
@@ -968,9 +1322,7 @@ func searchLocalGovernmentsHandler(c *gin.Context) {
 			db.Model(&GovernmentFollow{}).Where("user_id = ? AND government_id = ?", uid, g.ID).Count(&followingCount)
 		}
 		result = append(result, GovWithMeta{
-			LocalGovernment: g,
-			FollowerCount:   int(count),
-			IsFollowing:     followingCount > 0,
+			LocalGovernment: g, FollowerCount: int(count), IsFollowing: followingCount > 0,
 		})
 	}
 	c.JSON(http.StatusOK, result)
@@ -979,7 +1331,6 @@ func searchLocalGovernmentsHandler(c *gin.Context) {
 // ── Seed Initial SuperAdmin ─────────────────────────────────────────────────
 
 func seedSuperAdminHandler(c *gin.Context) {
-	// Only allow if no super_admin exists
 	var count int64
 	db.Model(&GovernmentAdmin{}).Where("role = ?", "super_admin").Count(&count)
 	if count > 0 {
@@ -997,40 +1348,129 @@ func seedSuperAdminHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	// Create local government
 	gov := LocalGovernment{Name: body.GovernmentName, Jurisdiction: body.Jurisdiction}
 	db.Create(&gov)
-	// Create super admin
 	hash, _ := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
 	admin := GovernmentAdmin{
-		GovernmentID: gov.ID,
-		Name:         body.Name,
-		Email:        body.Email,
-		PasswordHash: string(hash),
-		Role:         "super_admin",
+		GovernmentID: gov.ID, Name: body.Name, Email: body.Email,
+		PasswordHash: string(hash), Role: "super_admin",
 	}
 	db.Create(&admin)
 	token, _ := generateAdminToken(admin)
 	c.JSON(http.StatusCreated, gin.H{"token": token, "admin": admin, "government": gov})
 }
 
-// ── User Listing (admin) ────────────────────────────────────────────────────
+// ── User Listing with search, filter, pagination ────────────────────────────
 
 func listUsersHandler(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	searchQ := c.Query("search")
+	location := c.Query("location")
+	sortBy := c.DefaultQuery("sort", "created_at")
+	order := c.DefaultQuery("order", "desc")
+
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+	validSortFields := map[string]bool{"created_at": true, "name": true, "email": true, "location": true}
+	if !validSortFields[sortBy] {
+		sortBy = "created_at"
+	}
+	if order != "asc" && order != "desc" {
+		order = "desc"
+	}
+
+	query := db.Model(&User{})
+	if searchQ != "" {
+		searchQ = strings.TrimSpace(searchQ)
+		query = query.Where("name ILIKE ? OR email ILIKE ? OR RIGHT(aadhar_no, 4) = ?",
+			"%"+searchQ+"%", "%"+searchQ+"%", searchQ)
+	}
+	if location != "" {
+		query = query.Where("location ILIKE ?", "%"+location+"%")
+	}
+
+	var total int64
+	query.Count(&total)
 	var users []User
-	db.Find(&users)
-	c.JSON(http.StatusOK, users)
+	offset := (page - 1) * limit
+	query.Order(fmt.Sprintf("%s %s", sortBy, order)).Offset(offset).Limit(limit).Find(&users)
+	totalPages := int(math.Ceil(float64(total) / float64(limit)))
+
+	c.JSON(http.StatusOK, gin.H{
+		"users": users, "total": total, "page": page,
+		"limit": limit, "total_pages": totalPages,
+	})
+}
+
+// ── Admin Government Info ───────────────────────────────────────────────────
+
+func adminGetGovernmentHandler(c *gin.Context) {
+	govID := getGovID(c)
+	var gov LocalGovernment
+	if err := db.First(&gov, govID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "government not found"})
+		return
+	}
+	var followerCount int64
+	db.Model(&GovernmentFollow{}).Where("government_id = ?", govID).Count(&followerCount)
+	c.JSON(http.StatusOK, gin.H{
+		"id": gov.ID, "name": gov.Name, "jurisdiction": gov.Jurisdiction,
+		"state": gov.State, "email": gov.Email, "phone": gov.Phone,
+		"logo_url": gov.LogoURL, "created_at": gov.CreatedAt,
+		"follower_count": followerCount,
+	})
+}
+
+func adminUpdateGovernmentHandler(c *gin.Context) {
+	govID := getGovID(c)
+	var gov LocalGovernment
+	if err := db.First(&gov, govID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "government not found"})
+		return
+	}
+	var body struct {
+		Name         string `json:"name"`
+		Jurisdiction string `json:"jurisdiction"`
+		State        string `json:"state"`
+		Email        string `json:"email"`
+		Phone        string `json:"phone"`
+		LogoURL      string `json:"logo_url"`
+	}
+	c.ShouldBindJSON(&body)
+	if body.Name != "" {
+		gov.Name = body.Name
+	}
+	if body.Jurisdiction != "" {
+		gov.Jurisdiction = body.Jurisdiction
+	}
+	if body.State != "" {
+		gov.State = body.State
+	}
+	if body.Email != "" {
+		gov.Email = body.Email
+	}
+	if body.Phone != "" {
+		gov.Phone = body.Phone
+	}
+	if body.LogoURL != "" {
+		gov.LogoURL = body.LogoURL
+	}
+	db.Save(&gov)
+	c.JSON(http.StatusOK, gov)
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
 
 func main() {
 	log.Println("[admin-service] Starting Civic Connect Admin Service...")
-
 	connectPostgres()
 	connectRabbitMQ()
 	connectRedis()
-
 	log.Println("[admin-service] ✅ All connections established – Connected Successfully")
 
 	r := gin.Default()
@@ -1062,8 +1502,6 @@ func main() {
 		auth.POST("/logout", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"message": "logged out"})
 		})
-
-		// Government entity management (requires government role)
 		gov := auth.Group("/", roleRequired("government"))
 		{
 			gov.POST("/governments", createGovernmentHandler)
@@ -1071,13 +1509,9 @@ func main() {
 			gov.DELETE("/governments/:id", deleteGovernmentHandler)
 			gov.POST("/officials", createOfficialHandler)
 		}
-
-		// Follow officials
 		auth.POST("/follow/:official_id", followOfficialHandler)
 		auth.DELETE("/follow/:official_id", unfollowOfficialHandler)
 		auth.GET("/follow/:official_id", checkFollowHandler)
-
-		// Follow local governments
 		auth.POST("/follow/government/:gov_id", followGovernmentHandler)
 		auth.DELETE("/follow/government/:gov_id", unfollowGovernmentHandler)
 		auth.GET("/follow/government/:gov_id", checkGovernmentFollowHandler)
@@ -1093,32 +1527,45 @@ func main() {
 		admin.GET("/dashboard", dashboardHandler)
 		admin.POST("/change-password", adminChangePasswordHandler)
 
-		// Local government settings
-		admin.GET("/government", getLocalGovernmentHandler)
-		admin.PUT("/government", updateLocalGovernmentHandler)
-		admin.GET("/governments", listLocalGovernmentsHandler)
+		// Municipality management (SuperAdmin only)
+		admin.GET("/municipalities", adminRoleRequired("super_admin"), listMunicipalitiesHandler)
+		admin.POST("/municipalities", adminRoleRequired("super_admin"), createMunicipalityHandler)
+		admin.PUT("/municipalities/:id", adminRoleRequired("super_admin"), updateMunicipalityHandler)
+		admin.DELETE("/municipalities/:id", adminRoleRequired("super_admin"), deleteMunicipalityHandler)
 
-		// Departments — SuperAdmin & Manager can manage
-		admin.GET("/departments", listDepartmentsHandler)
-		admin.GET("/departments/:id", getDepartmentHandler)
-		admin.POST("/departments", adminRoleRequired("super_admin", "manager"), createDepartmentHandler)
-		admin.PUT("/departments/:id", adminRoleRequired("super_admin", "manager"), updateDepartmentHandler)
-		admin.DELETE("/departments/:id", adminRoleRequired("super_admin"), deleteDepartmentHandler)
+		// Government info for current admin
+		admin.GET("/government", adminGetGovernmentHandler)
+		admin.PUT("/government", adminRoleRequired("manager"), adminUpdateGovernmentHandler)
+
+		// Departments — Manager only creates/updates/deletes
+		admin.GET("/departments", adminRoleRequired("manager", "dept_manager"), listDepartmentsHandler)
+		admin.GET("/departments/:id", adminRoleRequired("manager", "dept_manager"), getDepartmentHandler)
+		admin.POST("/departments", adminRoleRequired("manager"), createDepartmentHandler)
+		admin.PUT("/departments/:id", adminRoleRequired("manager"), updateDepartmentHandler)
+		admin.DELETE("/departments/:id", adminRoleRequired("manager"), deleteDepartmentHandler)
 
 		// Officials management
-		admin.POST("/officials", adminRoleRequired("super_admin", "manager"), createOfficialHandler)
-		admin.PUT("/officials/:id", adminRoleRequired("super_admin", "manager"), updateOfficialHandler)
-		admin.DELETE("/officials/:id", adminRoleRequired("super_admin"), deleteOfficialHandler)
+		admin.POST("/officials", adminRoleRequired("manager"), createOfficialHandler)
+		admin.PUT("/officials/:id", adminRoleRequired("manager"), updateOfficialHandler)
+		admin.DELETE("/officials/:id", adminRoleRequired("manager"), deleteOfficialHandler)
 		admin.GET("/officials", listOfficialsHandler)
 
-		// Admin management — SuperAdmin manages all, Manager manages dept_managers
+		// Admin/Staff management
 		admin.GET("/admins", adminRoleRequired("super_admin", "manager"), listAdminsHandler)
 		admin.POST("/admins", adminRoleRequired("super_admin", "manager"), createAdminHandler)
 		admin.PUT("/admins/:id", adminRoleRequired("super_admin", "manager"), updateAdminHandler)
-		admin.DELETE("/admins/:id", adminRoleRequired("super_admin"), deleteAdminHandler)
+		admin.DELETE("/admins/:id", adminRoleRequired("super_admin", "manager"), deleteAdminHandler)
 
-		// Users (admin view)
-		admin.GET("/users", listUsersHandler)
+		// Article categories
+		admin.GET("/article-categories", adminRoleRequired("manager", "dept_manager"), listArticleCategoriesHandler)
+		admin.POST("/article-categories", adminRoleRequired("manager"), createArticleCategoryHandler)
+		admin.DELETE("/article-categories/:id", adminRoleRequired("manager"), deleteArticleCategoryHandler)
+
+		// Users
+		admin.GET("/users", adminRoleRequired("manager", "dept_manager"), listUsersHandler)
+
+		// Local government listing (for super_admin)
+		admin.GET("/governments", listLocalGovernmentsHandler)
 	}
 
 	port := env("PORT", "8081")

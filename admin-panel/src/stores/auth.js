@@ -15,26 +15,38 @@ export const useAuthStore = defineStore('auth', {
     role: (state) => state.user?.role || '',
     canManageComplaints: (state) => ['manager', 'dept_manager'].includes(state.user?.role),
     canManageArticles: (state) => ['manager', 'dept_manager'].includes(state.user?.role),
-    canManageDepartments: (state) => ['super_admin', 'manager'].includes(state.user?.role),
+    canManageDepartments: (state) => ['manager'].includes(state.user?.role),
     canManageAdmins: (state) => ['super_admin', 'manager'].includes(state.user?.role),
+    canManageMunicipalities: (state) => state.user?.role === 'super_admin',
+    governmentName: (state) => state.user?.government_name || '',
+    departmentName: (state) => state.user?.department_name || '',
+    governmentLogo: (state) => state.user?.government_logo || '',
   },
 
   actions: {
     async login(email, password) {
       const { data } = await api.post('/api/v1/admin/login', { email, password })
       this.token = data.token
-      this.user = data.admin
+      this.user = {
+        ...data.admin,
+        government_name: data.government_name,
+        government_logo: data.government_logo,
+        department_name: data.department_name,
+      }
       localStorage.setItem('civic_token', data.token)
-      localStorage.setItem('civic_user', JSON.stringify(data.admin))
+      localStorage.setItem('civic_user', JSON.stringify(this.user))
       api.defaults.headers.common['Authorization'] = `Bearer ${data.token}`
     },
 
     async seedSuperAdmin(payload) {
       const { data } = await api.post('/api/v1/admin/seed', payload)
       this.token = data.token
-      this.user = data.admin
+      this.user = {
+        ...data.admin,
+        government_name: data.government?.name || '',
+      }
       localStorage.setItem('civic_token', data.token)
-      localStorage.setItem('civic_user', JSON.stringify(data.admin))
+      localStorage.setItem('civic_user', JSON.stringify(this.user))
       api.defaults.headers.common['Authorization'] = `Bearer ${data.token}`
       return data
     },

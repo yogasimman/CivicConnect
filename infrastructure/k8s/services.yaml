@@ -1,8 +1,14 @@
+﻿# =============================================================================
+# Civic Connect – All Application Deployments & Services (K8s)
 # =============================================================================
-# K8s Deployments for all backend services + admin panel
+# All services use ClusterIP for internal communication.
+# NodePort services added for development access from host.
+# In production, remove NodePort services and use only NGINX gateway.
 # =============================================================================
 
-# ── Admin Service (Go + Gin) ────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# ADMIN SERVICE (Go + Gin)
+# ═══════════════════════════════════════════════════════════════════════════════
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -11,7 +17,7 @@ metadata:
   labels:
     app: admin-service
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: admin-service
@@ -26,9 +32,6 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8081
-          envFrom:
-            - configMapRef:
-                name: civic-config
           env:
             - name: DB_HOST
               valueFrom:
@@ -52,8 +55,6 @@ spec:
                   key: POSTGRES_PASSWORD
             - name: DB_NAME
               value: admin_db
-            - name: RABBITMQ_URL
-              value: amqp://$(RABBITMQ_USER):$(RABBITMQ_PASS)@rabbitmq-svc:5672/
             - name: RABBITMQ_USER
               valueFrom:
                 secretKeyRef:
@@ -64,6 +65,8 @@ spec:
                 secretKeyRef:
                   name: civic-rabbitmq-secret
                   key: RABBITMQ_DEFAULT_PASS
+            - name: RABBITMQ_URL
+              value: amqp://$(RABBITMQ_USER):$(RABBITMQ_PASS)@rabbitmq-svc:5672/
             - name: REDIS_ADDR
               value: redis-svc:6379
             - name: REDIS_PASSWORD
@@ -76,6 +79,11 @@ spec:
                 secretKeyRef:
                   name: civic-jwt-secret
                   key: JWT_SECRET
+            - name: JWT_EXPIRY
+              valueFrom:
+                configMapKeyRef:
+                  name: civic-config
+                  key: JWT_EXPIRY
             - name: PORT
               value: "8081"
           readinessProbe:
@@ -84,6 +92,12 @@ spec:
               port: 8081
             initialDelaySeconds: 10
             periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 30
+            periodSeconds: 15
           resources:
             requests:
               memory: "64Mi"
@@ -106,7 +120,25 @@ spec:
       targetPort: 8081
 
 ---
-# ── Content Service (Node.js + Express) ─────────────────────────────────────
+# Dev NodePort
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin-svc-dev
+  namespace: civic-connect
+spec:
+  type: NodePort
+  selector:
+    app: admin-service
+  ports:
+    - port: 8081
+      targetPort: 8081
+      nodePort: 30081
+
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONTENT SERVICE (Node.js + Express)
+# ═══════════════════════════════════════════════════════════════════════════════
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -115,7 +147,7 @@ metadata:
   labels:
     app: content-service
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: content-service
@@ -156,8 +188,6 @@ spec:
                   key: POSTGRES_PASSWORD
             - name: DB_NAME
               value: content_db
-            - name: RABBITMQ_URL
-              value: amqp://$(RABBITMQ_USER):$(RABBITMQ_PASS)@rabbitmq-svc:5672/
             - name: RABBITMQ_USER
               valueFrom:
                 secretKeyRef:
@@ -168,6 +198,8 @@ spec:
                 secretKeyRef:
                   name: civic-rabbitmq-secret
                   key: RABBITMQ_DEFAULT_PASS
+            - name: RABBITMQ_URL
+              value: amqp://$(RABBITMQ_USER):$(RABBITMQ_PASS)@rabbitmq-svc:5672/
             - name: REDIS_HOST
               valueFrom:
                 configMapKeyRef:
@@ -187,12 +219,40 @@ spec:
               value: "8082"
             - name: GRPC_PORT
               value: "50051"
+            - name: MINIO_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: civic-config
+                  key: MINIO_HOST
+            - name: MINIO_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: civic-config
+                  key: MINIO_PORT
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: civic-minio-secret
+                  key: MINIO_ROOT_USER
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: civic-minio-secret
+                  key: MINIO_ROOT_PASSWORD
+            - name: MINIO_BUCKET
+              value: civic-uploads
           readinessProbe:
             httpGet:
               path: /health
               port: 8082
             initialDelaySeconds: 10
             periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            initialDelaySeconds: 30
+            periodSeconds: 15
           resources:
             requests:
               memory: "64Mi"
@@ -219,7 +279,30 @@ spec:
       targetPort: 50051
 
 ---
-# ── Complaint Service (Go + Gin + PostGIS) ──────────────────────────────────
+# Dev NodePort
+apiVersion: v1
+kind: Service
+metadata:
+  name: content-svc-dev
+  namespace: civic-connect
+spec:
+  type: NodePort
+  selector:
+    app: content-service
+  ports:
+    - name: http
+      port: 8082
+      targetPort: 8082
+      nodePort: 30082
+    - name: grpc
+      port: 50051
+      targetPort: 50051
+      nodePort: 30051
+
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# COMPLAINT SERVICE (Go + Gin + PostGIS)
+# ═══════════════════════════════════════════════════════════════════════════════
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -228,7 +311,7 @@ metadata:
   labels:
     app: complaint-service
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: complaint-service
@@ -266,8 +349,6 @@ spec:
                   key: POSTGRES_PASSWORD
             - name: DB_NAME
               value: complaint_db
-            - name: RABBITMQ_URL
-              value: amqp://$(RABBITMQ_USER):$(RABBITMQ_PASS)@rabbitmq-svc:5672/
             - name: RABBITMQ_USER
               valueFrom:
                 secretKeyRef:
@@ -278,6 +359,8 @@ spec:
                 secretKeyRef:
                   name: civic-rabbitmq-secret
                   key: RABBITMQ_DEFAULT_PASS
+            - name: RABBITMQ_URL
+              value: amqp://$(RABBITMQ_USER):$(RABBITMQ_PASS)@rabbitmq-svc:5672/
             - name: REDIS_ADDR
               value: redis-svc:6379
             - name: REDIS_PASSWORD
@@ -310,6 +393,12 @@ spec:
               port: 8083
             initialDelaySeconds: 10
             periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8083
+            initialDelaySeconds: 30
+            periodSeconds: 15
           resources:
             requests:
               memory: "64Mi"
@@ -332,7 +421,25 @@ spec:
       targetPort: 8083
 
 ---
-# ── AI Worker (Python) ──────────────────────────────────────────────────────
+# Dev NodePort
+apiVersion: v1
+kind: Service
+metadata:
+  name: complaint-svc-dev
+  namespace: civic-connect
+spec:
+  type: NodePort
+  selector:
+    app: complaint-service
+  ports:
+    - port: 8083
+      targetPort: 8083
+      nodePort: 30083
+
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# AI WORKER (Python)
+# ═══════════════════════════════════════════════════════════════════════════════
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -354,9 +461,12 @@ spec:
         - name: ai-worker
           image: civic-connect/ai-worker:latest
           imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8085
+              name: http
+            - containerPort: 50052
+              name: grpc
           env:
-            - name: RABBITMQ_URL
-              value: amqp://$(RABBITMQ_USER):$(RABBITMQ_PASS)@rabbitmq-svc:5672/
             - name: RABBITMQ_USER
               valueFrom:
                 secretKeyRef:
@@ -367,10 +477,39 @@ spec:
                 secretKeyRef:
                   name: civic-rabbitmq-secret
                   key: RABBITMQ_DEFAULT_PASS
+            - name: RABBITMQ_URL
+              value: amqp://$(RABBITMQ_USER):$(RABBITMQ_PASS)@rabbitmq-svc:5672/
             - name: CONTENT_SERVICE_GRPC
               value: content-svc:50051
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: civic-config
+                  key: REDIS_HOST
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: civic-config
+                  key: REDIS_PORT
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: civic-redis-secret
+                  key: REDIS_PASSWORD
             - name: GEMINI_API_KEY
-              value: mock-api-key
+              valueFrom:
+                secretKeyRef:
+                  name: civic-gemini-secret
+                  key: GEMINI_API_KEY
+            - name: GEMINI_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: civic-config
+                  key: GEMINI_MODEL
+            - name: PORT
+              value: "8085"
+            - name: AI_GRPC_PORT
+              value: "50052"
           resources:
             requests:
               memory: "64Mi"
@@ -380,7 +519,26 @@ spec:
               cpu: "200m"
 
 ---
-# ── Chatbot Service (Python + FastAPI + WebSocket) ──────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-worker-svc
+  namespace: civic-connect
+spec:
+  selector:
+    app: ai-worker
+  ports:
+    - name: http
+      port: 8085
+      targetPort: 8085
+    - name: grpc
+      port: 50052
+      targetPort: 50052
+
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# CHATBOT SERVICE (Python + FastAPI + WebSocket)
+# ═══════════════════════════════════════════════════════════════════════════════
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -405,8 +563,6 @@ spec:
           ports:
             - containerPort: 8084
           env:
-            - name: RABBITMQ_URL
-              value: amqp://$(RABBITMQ_USER):$(RABBITMQ_PASS)@rabbitmq-svc:5672/
             - name: RABBITMQ_USER
               valueFrom:
                 secretKeyRef:
@@ -417,6 +573,8 @@ spec:
                 secretKeyRef:
                   name: civic-rabbitmq-secret
                   key: RABBITMQ_DEFAULT_PASS
+            - name: RABBITMQ_URL
+              value: amqp://$(RABBITMQ_USER):$(RABBITMQ_PASS)@rabbitmq-svc:5672/
             - name: REDIS_HOST
               valueFrom:
                 configMapKeyRef:
@@ -432,6 +590,11 @@ spec:
                 secretKeyRef:
                   name: civic-redis-secret
                   key: REDIS_PASSWORD
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: civic-gemini-secret
+                  key: GEMINI_API_KEY
             - name: PORT
               value: "8084"
           readinessProbe:
@@ -440,6 +603,12 @@ spec:
               port: 8084
             initialDelaySeconds: 10
             periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8084
+            initialDelaySeconds: 30
+            periodSeconds: 15
           resources:
             requests:
               memory: "64Mi"
@@ -462,7 +631,25 @@ spec:
       targetPort: 8084
 
 ---
-# ── Admin Panel (Vue.js) ────────────────────────────────────────────────────
+# Dev NodePort
+apiVersion: v1
+kind: Service
+metadata:
+  name: chatbot-svc-dev
+  namespace: civic-connect
+spec:
+  type: NodePort
+  selector:
+    app: chatbot-service
+  ports:
+    - port: 8084
+      targetPort: 8084
+      nodePort: 30084
+
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# ADMIN PANEL (Vue.js + nginx)
+# ═══════════════════════════════════════════════════════════════════════════════
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -486,6 +673,12 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
           resources:
             requests:
               memory: "32Mi"
@@ -506,3 +699,93 @@ spec:
   ports:
     - port: 80
       targetPort: 80
+
+---
+# Dev NodePort
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin-panel-svc-dev
+  namespace: civic-connect
+spec:
+  type: NodePort
+  selector:
+    app: admin-panel
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30000
+
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# DEV NodePorts for Infrastructure (PostgreSQL, RabbitMQ, MinIO, Redis)
+# ═══════════════════════════════════════════════════════════════════════════════
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-svc-dev
+  namespace: civic-connect
+spec:
+  type: NodePort
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+      nodePort: 30432
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq-svc-dev
+  namespace: civic-connect
+spec:
+  type: NodePort
+  selector:
+    app: rabbitmq
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: 5672
+      nodePort: 30672
+    - name: management
+      port: 15672
+      targetPort: 15672
+      nodePort: 31672
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio-svc-dev
+  namespace: civic-connect
+spec:
+  type: NodePort
+  selector:
+    app: minio
+  ports:
+    - name: api
+      port: 9000
+      targetPort: 9000
+      nodePort: 30900
+    - name: console
+      port: 9001
+      targetPort: 9001
+      nodePort: 30901
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-svc-dev
+  namespace: civic-connect
+spec:
+  type: NodePort
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+      nodePort: 30379
+

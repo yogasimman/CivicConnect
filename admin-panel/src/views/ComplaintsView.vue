@@ -1,114 +1,195 @@
-<template>
+﻿<template>
   <div class="p-6">
-    <div class="flex items-center justify-between mb-6">
-      <div>
-        <h1 class="text-2xl font-bold text-gray-900">Complaints</h1>
-        <p class="text-gray-500 text-sm mt-1">{{ authStore.isDeptManager ? 'Your department complaints' : 'All government complaints' }}</p>
-      </div>
+    <!-- Header -->
+    <div class="mb-6 pb-4 border-b border-navy-100">
+      <h1 class="page-title">Complaints</h1>
+      <p class="page-subtitle">Review, manage and resolve citizen complaints</p>
     </div>
 
-    <!-- Filters -->
-    <div class="bg-white rounded-xl border border-gray-200 p-4 mb-6">
-      <div class="flex flex-wrap gap-3 items-center">
-        <div class="flex bg-gray-100 rounded-lg p-1">
-          <button v-for="s in ['all', 'pending', 'in_progress', 'resolved', 'rejected']" :key="s"
-            @click="statusFilter = s" :class="statusFilter === s ? 'bg-white shadow text-gray-900' : 'text-gray-500'"
-            class="px-3 py-1.5 text-sm font-medium rounded-md transition capitalize">
-            {{ s === 'all' ? 'All' : s.replace('_', ' ') }}
-          </button>
-        </div>
-        <select v-if="authStore.isManager" v-model="deptFilter" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-civic-500 focus:border-civic-500">
-          <option value="">All Departments</option>
-          <option v-for="d in departments" :key="d.id" :value="d.id">{{ d.name }}</option>
-        </select>
-        <input v-model="search" type="text" placeholder="Search complaints..." class="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1 min-w-[200px] focus:ring-civic-500 focus:border-civic-500" />
+    <!-- Status Filter Bar -->
+    <div class="flex flex-wrap items-center gap-3 mb-6">
+      <div class="flex bg-navy-100 rounded-lg p-1 gap-1">
+        <button v-for="s in statusFilters" :key="s.value" @click="statusFilter = s.value"
+          :class="statusFilter === s.value ? 'bg-white text-navy-800 shadow-sm' : 'text-navy-500 hover:text-navy-700'"
+          class="px-4 py-1.5 text-sm font-medium rounded-md transition">
+          {{ s.label }}
+        </button>
       </div>
+      <select v-if="authStore.canManageDepartments" v-model="deptFilter" @change="loadComplaints"
+        class="form-input w-auto text-sm">
+        <option value="">All Departments</option>
+        <option v-for="d in departments" :key="d.id" :value="d.id">{{ d.name }}</option>
+      </select>
     </div>
 
-    <!-- Complaints Table -->
-    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div v-if="loading" class="p-8 text-center text-gray-400">Loading complaints...</div>
-      <table v-else class="w-full text-sm">
-        <thead class="bg-gray-50 border-b">
-          <tr>
-            <th class="text-left px-4 py-3 text-gray-600 font-medium">ID</th>
-            <th class="text-left px-4 py-3 text-gray-600 font-medium">Category</th>
-            <th class="text-left px-4 py-3 text-gray-600 font-medium">Description</th>
-            <th class="text-left px-4 py-3 text-gray-600 font-medium">Status</th>
-            <th class="text-left px-4 py-3 text-gray-600 font-medium">Priority</th>
-            <th class="text-left px-4 py-3 text-gray-600 font-medium">Date</th>
-            <th class="text-left px-4 py-3 text-gray-600 font-medium">Actions</th>
+    <!-- Table -->
+    <div class="card overflow-hidden">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="table-header">
+            <th class="text-left px-4 py-3">ID</th>
+            <th class="text-left px-4 py-3">Category</th>
+            <th class="text-left px-4 py-3">Description</th>
+            <th class="text-left px-4 py-3">Status</th>
+            <th class="text-left px-4 py-3">Priority</th>
+            <th class="text-left px-4 py-3">Date</th>
+            <th class="text-left px-4 py-3">Actions</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="c in filteredComplaints" :key="c.id" class="border-t hover:bg-gray-50 cursor-pointer" @click="openDetail(c)">
-            <td class="px-4 py-3 font-mono text-gray-800">#{{ c.id }}</td>
-            <td class="px-4 py-3"><span class="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700">{{ c.category }}</span></td>
-            <td class="px-4 py-3 text-gray-700 max-w-xs truncate">{{ c.description }}</td>
+          <tr v-for="c in filteredComplaints" :key="c.id || c.ID" class="table-row">
+            <td class="px-4 py-3 font-mono text-xs text-navy-500">#{{ c.id || c.ID }}</td>
+            <td class="px-4 py-3 font-medium text-navy-700">{{ c.category }}</td>
+            <td class="px-4 py-3 text-navy-600">{{ truncate(c.description, 60) }}</td>
             <td class="px-4 py-3">
-              <select v-model="c.status" @click.stop @change="updateStatus(c)" class="text-xs border rounded px-2 py-1" :class="statusClass(c.status)">
-                <option value="pending">Pending</option>
-                <option value="in_progress">In Progress</option>
-                <option value="resolved">Resolved</option>
-                <option value="rejected">Rejected</option>
-              </select>
+              <span class="badge" :class="statusClass(c.status || c.Status)">{{ c.status || c.Status }}</span>
             </td>
             <td class="px-4 py-3">
-              <span class="font-mono text-sm" :class="(c.upvotes - c.downvotes * 2) > 0 ? 'text-green-600' : 'text-red-600'">{{ c.upvotes - (c.downvotes * 2) }}</span>
+              <span class="text-xs font-semibold" :class="priorityColor(c.priority)">{{ c.priority || 'Normal' }}</span>
             </td>
-            <td class="px-4 py-3 text-gray-500 text-xs">{{ new Date(c.created_at).toLocaleDateString() }}</td>
-            <td class="px-4 py-3" @click.stop>
-              <button @click="openDetail(c)" class="text-civic-600 hover:text-civic-700 text-sm font-medium">View</button>
+            <td class="px-4 py-3 text-navy-400 text-xs">{{ formatDate(c.created_at || c.CreatedAt) }}</td>
+            <td class="px-4 py-3">
+              <div class="flex gap-2">
+                <button @click="openDetail(c)" class="text-navy-500 hover:text-navy-700" title="View Details">
+                  <i class="bi bi-eye"></i>
+                </button>
+                <button v-if="authStore.canManageDepartments" @click="openReassign(c)" class="text-navy-500 hover:text-navy-700" title="Reassign">
+                  <i class="bi bi-arrow-clockwise"></i>
+                </button>
+              </div>
             </td>
           </tr>
-          <tr v-if="filteredComplaints.length === 0"><td colspan="7" class="px-4 py-12 text-center text-gray-400">No complaints found</td></tr>
+          <tr v-if="!filteredComplaints.length">
+            <td colspan="7" class="text-center py-12 text-navy-300">
+              <i class="bi bi-exclamation-triangle text-3xl mb-2 block"></i>
+              <p class="text-sm">No complaints found</p>
+            </td>
+          </tr>
         </tbody>
       </table>
     </div>
 
     <!-- Detail Modal -->
-    <div v-if="selectedComplaint" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" @click.self="selectedComplaint = null">
-      <div class="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div class="p-6 border-b flex items-center justify-between">
-          <h2 class="text-xl font-bold text-gray-900">Complaint #{{ selectedComplaint.id }}</h2>
-          <button @click="selectedComplaint = null" class="text-gray-400 hover:text-gray-600">✕</button>
+    <div v-if="showDetail" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" @click.self="showDetail = false">
+      <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-navy-100 flex items-center justify-between">
+          <div>
+            <h2 class="font-serif font-bold text-navy-800 text-lg">Complaint #{{ selected.id || selected.ID }}</h2>
+            <span class="badge mt-1" :class="statusClass(selected.status || selected.Status)">{{ selected.status || selected.Status }}</span>
+          </div>
+          <button @click="showDetail = false" class="text-navy-400 hover:text-navy-600 text-xl">&times;</button>
         </div>
-        <div class="p-6 space-y-4">
-          <div><label class="text-sm font-medium text-gray-500">Category</label><p class="text-gray-900 mt-1">{{ selectedComplaint.category }}</p></div>
-          <div><label class="text-sm font-medium text-gray-500">Description</label><p class="text-gray-900 mt-1 whitespace-pre-wrap">{{ selectedComplaint.description }}</p></div>
-          <div v-if="selectedComplaint.ai_analysis" class="bg-purple-50 border border-purple-200 rounded-lg p-4">
-            <label class="text-sm font-medium text-purple-700">AI Analysis</label>
-            <p class="text-purple-900 mt-1 text-sm">{{ selectedComplaint.ai_analysis }}</p>
-          </div>
-          <div class="grid grid-cols-2 gap-4">
-            <div><label class="text-sm font-medium text-gray-500">Status</label><p class="mt-1"><span :class="statusClass(selectedComplaint.status)" class="text-xs px-2.5 py-1 rounded-full font-medium">{{ selectedComplaint.status }}</span></p></div>
-            <div><label class="text-sm font-medium text-gray-500">Priority Score</label><p class="text-gray-900 mt-1 font-mono">{{ selectedComplaint.upvotes - (selectedComplaint.downvotes * 2) }}</p></div>
-          </div>
-          <div v-if="selectedComplaint.manual_location"><label class="text-sm font-medium text-gray-500">Location</label><p class="text-gray-900 mt-1">{{ selectedComplaint.manual_location }}</p></div>
-
-          <!-- Actions Taken -->
-          <div class="border-t pt-4 mt-4">
-            <h3 class="text-lg font-semibold text-gray-900 mb-3">Actions Taken</h3>
-            <div v-if="complaintActions.length === 0" class="text-gray-400 text-sm">No actions yet</div>
-            <div v-for="a in complaintActions" :key="a.id" class="bg-gray-50 rounded-lg p-3 mb-2">
-              <p class="text-sm text-gray-900">{{ a.action_details }}</p>
-              <div class="flex items-center mt-2">
-                <div class="flex-1 bg-gray-200 rounded-full h-2 mr-3"><div class="bg-civic-600 h-2 rounded-full" :style="{ width: a.completion_percentage + '%' }"></div></div>
-                <span class="text-xs text-gray-600 font-medium">{{ a.completion_percentage }}%</span>
-              </div>
+        <div class="p-6 space-y-5">
+          <!-- Info -->
+          <div class="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <p class="text-navy-400 text-xs uppercase tracking-wider mb-1">Category</p>
+              <p class="text-navy-700 font-medium">{{ selected.category }}</p>
             </div>
-
-            <div v-if="authStore.isDeptManager || authStore.isManager" class="mt-4 bg-blue-50 rounded-lg p-4">
-              <h4 class="text-sm font-semibold text-gray-900 mb-3">Add Action</h4>
-              <textarea v-model="newAction.details" placeholder="Describe the action taken..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3" rows="2"></textarea>
-              <div class="flex items-center gap-3">
-                <label class="text-sm text-gray-600">Completion:</label>
-                <input v-model.number="newAction.completion" type="range" min="0" max="100" step="10" class="flex-1" />
-                <span class="text-sm font-medium text-gray-700 w-10 text-right">{{ newAction.completion }}%</span>
-                <button @click="addAction" :disabled="!newAction.details" class="bg-civic-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-civic-700 disabled:opacity-50 transition">Add</button>
-              </div>
+            <div>
+              <p class="text-navy-400 text-xs uppercase tracking-wider mb-1">Priority</p>
+              <p class="font-medium" :class="priorityColor(selected.priority)">{{ selected.priority || 'Normal' }}</p>
+            </div>
+            <div class="col-span-2">
+              <p class="text-navy-400 text-xs uppercase tracking-wider mb-1">Description</p>
+              <p class="text-navy-700">{{ selected.description }}</p>
+            </div>
+            <div v-if="selected.location">
+              <p class="text-navy-400 text-xs uppercase tracking-wider mb-1">Location</p>
+              <p class="text-navy-600 text-sm">{{ selected.location }}</p>
+            </div>
+            <div>
+              <p class="text-navy-400 text-xs uppercase tracking-wider mb-1">Filed On</p>
+              <p class="text-navy-600 text-sm">{{ formatDate(selected.created_at || selected.CreatedAt) }}</p>
             </div>
           </div>
+
+          <!-- Status Update -->
+          <div class="border-t border-navy-100 pt-4">
+            <label class="form-label">Update Status</label>
+            <div class="flex gap-2 mt-1">
+              <select v-model="updateStatus" class="form-input flex-1">
+                <option value="pending">Pending</option>
+                <option value="in_progress">In Progress</option>
+                <option value="resolved">Resolved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+              <button @click="changeStatus" class="btn-primary">Update</button>
+            </div>
+          </div>
+
+          <!-- Action History Timeline -->
+          <div class="border-t border-navy-100 pt-4">
+            <h3 class="font-serif font-bold text-navy-800 mb-3">Action History</h3>
+            <div v-if="actions.length === 0" class="text-navy-300 text-sm">No actions recorded yet</div>
+            <div v-else class="space-y-3">
+              <div v-for="(a, i) in actions" :key="i" class="flex gap-3">
+                <div class="flex flex-col items-center">
+                  <div class="w-3 h-3 rounded-full bg-navy-400 mt-1"></div>
+                  <div v-if="i < actions.length - 1" class="w-0.5 flex-1 bg-navy-200"></div>
+                </div>
+                <div class="pb-3">
+                  <p class="text-sm text-navy-700">{{ a.description }}</p>
+                  <div class="flex items-center gap-3 mt-1">
+                    <span class="text-xs text-navy-400">{{ formatDate(a.created_at) }}</span>
+                    <span v-if="a.completion != null" class="text-xs font-medium text-navy-500">{{ a.completion }}% complete</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Add Action -->
+          <div class="border-t border-navy-100 pt-4">
+            <h3 class="font-serif font-bold text-navy-800 mb-3">Add Action</h3>
+            <div class="space-y-3">
+              <div>
+                <label class="form-label">Action Description</label>
+                <textarea v-model="actionForm.description" rows="2" class="form-input" placeholder="Describe action taken..."></textarea>
+              </div>
+              <div>
+                <label class="form-label">Completion %</label>
+                <input v-model.number="actionForm.completion" type="number" min="0" max="100" class="form-input w-32" placeholder="0-100" />
+              </div>
+              <button @click="addAction" class="btn-primary">
+                <i class="bi bi-plus-lg mr-1"></i> Add Action
+              </button>
+            </div>
+          </div>
+
+          <!-- Reassign (Manager only) -->
+          <div v-if="authStore.canManageDepartments" class="border-t border-navy-100 pt-4">
+            <h3 class="font-serif font-bold text-navy-800 mb-3">Reassign Department</h3>
+            <div class="flex gap-2">
+              <select v-model="reassignDept" class="form-input flex-1">
+                <option value="">Select department</option>
+                <option v-for="d in departments" :key="d.id" :value="d.id">{{ d.name }}</option>
+              </select>
+              <button @click="reassignComplaint" class="btn-secondary">
+                <i class="bi bi-arrow-clockwise mr-1"></i> Reassign
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reassign Quick Modal -->
+    <div v-if="showReassign" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" @click.self="showReassign = false">
+      <div class="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+        <h2 class="font-serif font-bold text-navy-800 text-lg mb-4">Reassign Complaint #{{ reassignTarget?.id || reassignTarget?.ID }}</h2>
+        <div>
+          <label class="form-label">Target Department</label>
+          <select v-model="reassignDept" class="form-input w-full">
+            <option value="">Select department</option>
+            <option v-for="d in departments" :key="d.id" :value="d.id">{{ d.name }}</option>
+          </select>
+        </div>
+        <div class="flex justify-end gap-3 mt-5">
+          <button @click="showReassign = false" class="btn-secondary">Cancel</button>
+          <button @click="reassignFromModal" class="btn-primary">
+            <i class="bi bi-arrow-clockwise mr-1"></i> Reassign
+          </button>
         </div>
       </div>
     </div>
@@ -121,78 +202,134 @@ import { useAuthStore } from '../stores/auth'
 import api from '../api'
 
 const authStore = useAuthStore()
-const loading = ref(true)
 const complaints = ref([])
 const departments = ref([])
-const statusFilter = ref('all')
+const statusFilter = ref('')
 const deptFilter = ref('')
-const search = ref('')
-const selectedComplaint = ref(null)
-const complaintActions = ref([])
-const newAction = ref({ details: '', completion: 0 })
+const showDetail = ref(false)
+const showReassign = ref(false)
+const selected = ref({})
+const reassignTarget = ref(null)
+const reassignDept = ref('')
+const updateStatus = ref('')
+const actions = ref([])
+const actionForm = ref({ description: '', completion: 0 })
+
+const statusFilters = [
+  { label: 'All', value: '' },
+  { label: 'Pending', value: 'pending' },
+  { label: 'In Progress', value: 'in_progress' },
+  { label: 'Resolved', value: 'resolved' },
+  { label: 'Rejected', value: 'rejected' },
+]
 
 const filteredComplaints = computed(() => {
-  return complaints.value.filter(c => {
-    if (statusFilter.value !== 'all' && c.status !== statusFilter.value) return false
-    if (deptFilter.value && c.department_id != deptFilter.value) return false
-    if (search.value) {
-      const q = search.value.toLowerCase()
-      return c.category?.toLowerCase().includes(q) || c.description?.toLowerCase().includes(q)
-    }
-    return true
-  })
+  if (!statusFilter.value) return complaints.value
+  return complaints.value.filter(c => (c.status || c.Status) === statusFilter.value)
 })
 
-function statusClass(status) {
-  const c = { pending: 'bg-yellow-100 text-yellow-800', in_progress: 'bg-blue-100 text-blue-800', resolved: 'bg-green-100 text-green-800', rejected: 'bg-red-100 text-red-800' }
-  return c[status] || 'bg-gray-100 text-gray-800'
+function truncate(str, len) {
+  if (!str) return ''
+  return str.length > len ? str.substring(0, len) + '...' : str
 }
 
-async function updateStatus(complaint) {
-  try { await api.put(`/api/v1/complaints/${complaint.id}`, { status: complaint.status }) } catch { alert('Failed to update status') }
+function statusClass(s) {
+  const map = { pending: 'badge-warning', in_progress: 'badge-info', resolved: 'badge-success', rejected: 'badge-danger' }
+  return map[s] || 'badge-info'
 }
 
-async function openDetail(complaint) {
-  selectedComplaint.value = complaint
+function priorityColor(p) {
+  const map = { high: 'text-red-600', medium: 'text-amber-600', low: 'text-green-600' }
+  return map[p?.toLowerCase()] || 'text-navy-500'
+}
+
+function formatDate(d) {
+  if (!d) return ''
+  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+function openDetail(c) {
+  selected.value = { ...c }
+  updateStatus.value = c.status || c.Status || 'pending'
+  reassignDept.value = ''
+  actionForm.value = { description: '', completion: 0 }
+  loadActions(c.id || c.ID)
+  showDetail.value = true
+}
+
+function openReassign(c) {
+  reassignTarget.value = c
+  reassignDept.value = ''
+  showReassign.value = true
+}
+
+async function loadComplaints() {
   try {
-    const { data } = await api.get(`/api/v1/complaints/${complaint.id}/actions`)
-    complaintActions.value = Array.isArray(data) ? data : []
-  } catch { complaintActions.value = [] }
+    const params = {}
+    if (deptFilter.value) params.department_id = deptFilter.value
+    const { data } = await api.get('/api/v1/complaints', { params })
+    complaints.value = data.complaints || data || []
+  } catch {}
+}
+
+async function loadDepartments() {
+  if (!authStore.canManageDepartments) return
+  try {
+    const { data } = await api.get('/api/v1/admin/departments')
+    departments.value = data.departments || data || []
+  } catch {}
+}
+
+async function loadActions(id) {
+  actions.value = []
+  try {
+    const { data } = await api.get('/api/v1/complaints/' + id)
+    actions.value = data.actions || []
+  } catch {}
+}
+
+async function changeStatus() {
+  const id = selected.value.id || selected.value.ID
+  try {
+    await api.put('/api/v1/complaints/' + id, { status: updateStatus.value })
+    selected.value.status = updateStatus.value
+    selected.value.Status = updateStatus.value
+    await loadComplaints()
+  } catch {}
 }
 
 async function addAction() {
-  if (!newAction.value.details || !selectedComplaint.value) return
+  if (!actionForm.value.description) return
+  const id = selected.value.id || selected.value.ID
   try {
-    await api.post(`/api/v1/complaints/${selectedComplaint.value.id}/actions`, {
-      government_id: authStore.user?.government_id,
-      admin_id: authStore.user?.id,
-      action_details: newAction.value.details,
-      completion_percentage: newAction.value.completion,
-    })
-    newAction.value = { details: '', completion: 0 }
-    const { data } = await api.get(`/api/v1/complaints/${selectedComplaint.value.id}/actions`)
-    complaintActions.value = Array.isArray(data) ? data : []
-    fetchComplaints()
-  } catch { alert('Failed to add action') }
+    await api.post('/api/v1/complaints/' + id + '/actions', actionForm.value)
+    actionForm.value = { description: '', completion: 0 }
+    await loadActions(id)
+  } catch {}
 }
 
-async function fetchComplaints() {
-  loading.value = true
+async function reassignComplaint() {
+  if (!reassignDept.value) return
+  const id = selected.value.id || selected.value.ID
   try {
-    const params = {}
-    const govId = authStore.user?.government_id
-    if (govId) params.government_id = govId
-    if (authStore.isDeptManager && authStore.user?.department_id) params.department_id = authStore.user.department_id
-    const { data } = await api.get('/api/v1/complaints/', { params })
-    complaints.value = Array.isArray(data) ? data : []
-  } catch { complaints.value = [] }
-  finally { loading.value = false }
+    await api.put('/api/v1/complaints/' + id + '/reassign', { department_id: reassignDept.value })
+    showDetail.value = false
+    await loadComplaints()
+  } catch {}
 }
 
-onMounted(async () => {
-  fetchComplaints()
-  if (authStore.isManager) {
-    try { const { data } = await api.get('/api/v1/admin/departments'); departments.value = Array.isArray(data) ? data : [] } catch {}
-  }
+async function reassignFromModal() {
+  if (!reassignDept.value || !reassignTarget.value) return
+  const id = reassignTarget.value.id || reassignTarget.value.ID
+  try {
+    await api.put('/api/v1/complaints/' + id + '/reassign', { department_id: reassignDept.value })
+    showReassign.value = false
+    await loadComplaints()
+  } catch {}
+}
+
+onMounted(() => {
+  loadComplaints()
+  loadDepartments()
 })
 </script>

@@ -1,58 +1,62 @@
-<template>
+﻿<template>
   <div class="p-6">
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
-      <p class="text-gray-500 text-sm mt-1">Welcome back, {{ authStore.user?.name }}.</p>
+    <!-- Header -->
+    <div class="mb-6 pb-4 border-b border-navy-100">
+      <h1 class="page-title">Dashboard</h1>
+      <p class="page-subtitle">Overview of {{ authStore.governmentName || 'your administration' }}</p>
     </div>
 
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
-      <div v-for="stat in stats" :key="stat.label" class="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition">
-        <div class="flex items-center justify-between mb-3">
-          <div :class="stat.iconBg" class="w-10 h-10 rounded-lg flex items-center justify-center">
-            <span class="text-white text-lg">{{ stat.emoji }}</span>
+    <!-- Stats Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+      <div v-for="stat in stats" :key="stat.label" class="card p-5 hover:shadow-md transition">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-wider text-navy-400">{{ stat.label }}</p>
+            <p class="text-3xl font-bold text-navy-800 mt-1 font-sans">{{ stat.value }}</p>
+          </div>
+          <div class="w-12 h-12 rounded-lg flex items-center justify-center" :class="stat.bg">
+            <i :class="stat.icon" class="text-xl"></i>
           </div>
         </div>
-        <p class="text-2xl font-bold text-gray-900">{{ stat.value }}</p>
-        <p class="text-sm text-gray-500 mt-1">{{ stat.label }}</p>
       </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div v-if="authStore.canManageComplaints" class="bg-white rounded-xl border border-gray-200 p-5">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-lg font-semibold text-gray-900">Recent Complaints</h2>
-          <router-link to="/complaints" class="text-civic-600 text-sm font-medium hover:text-civic-700">View All &rarr;</router-link>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <!-- Recent Complaints -->
+      <div class="lg:col-span-2 card">
+        <div class="px-5 py-4 border-b border-navy-100 flex items-center justify-between">
+          <h2 class="font-serif font-bold text-navy-800">Recent Complaints</h2>
+          <router-link v-if="authStore.canManageComplaints" to="/complaints" class="text-sm text-navy-500 hover:text-navy-700 font-medium">View All <i class="bi bi-arrow-right"></i></router-link>
         </div>
-        <div v-if="complaints.length === 0" class="text-gray-400 text-sm py-8 text-center">No complaints yet</div>
-        <div v-else class="space-y-3">
-          <div v-for="c in complaints.slice(0, 5)" :key="c.id" class="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+        <div v-if="recentComplaints.length === 0" class="p-8 text-center text-navy-300">
+          <i class="bi bi-inbox text-3xl mb-2 block"></i>
+          <p class="text-sm">No complaints yet</p>
+        </div>
+        <div v-else class="divide-y divide-navy-100">
+          <div v-for="c in recentComplaints" :key="c.id || c.ID" class="px-5 py-3 flex items-center justify-between hover:bg-navy-50 transition">
             <div class="flex-1 min-w-0">
-              <p class="text-sm font-medium text-gray-900 truncate">{{ c.category }}</p>
-              <p class="text-xs text-gray-500 truncate">{{ c.description?.substring(0, 60) }}...</p>
+              <p class="text-sm font-medium text-navy-700 truncate">{{ c.description?.substring(0, 60) || 'No description' }}...</p>
+              <p class="text-xs text-navy-400 mt-0.5">{{ c.category }} &middot; {{ formatDate(c.created_at || c.CreatedAt) }}</p>
             </div>
-            <span :class="statusClass(c.status)" class="text-xs px-2.5 py-1 rounded-full font-medium ml-3 whitespace-nowrap">{{ c.status }}</span>
+            <span class="badge ml-3" :class="statusClass(c.status || c.Status)">{{ c.status || c.Status }}</span>
           </div>
         </div>
       </div>
 
-      <div class="bg-white rounded-xl border border-gray-200 p-5">
-        <h2 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
-        <div class="grid grid-cols-2 gap-3">
-          <router-link v-if="authStore.canManageComplaints" to="/complaints" class="flex items-center p-3 bg-orange-50 rounded-lg hover:bg-orange-100 transition">
-            <div class="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center mr-3 text-white text-sm">!</div>
-            <span class="text-sm font-medium text-gray-700">Complaints</span>
-          </router-link>
-          <router-link v-if="authStore.canManageArticles" to="/articles" class="flex items-center p-3 bg-blue-50 rounded-lg hover:bg-blue-100 transition">
-            <div class="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center mr-3 text-white text-sm">A</div>
-            <span class="text-sm font-medium text-gray-700">Articles</span>
-          </router-link>
-          <router-link v-if="authStore.canManageDepartments" to="/departments" class="flex items-center p-3 bg-purple-50 rounded-lg hover:bg-purple-100 transition">
-            <div class="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center mr-3 text-white text-sm">D</div>
-            <span class="text-sm font-medium text-gray-700">Departments</span>
-          </router-link>
-          <router-link to="/settings" class="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
-            <div class="w-8 h-8 bg-gray-500 rounded-lg flex items-center justify-center mr-3 text-white text-sm">S</div>
-            <span class="text-sm font-medium text-gray-700">Settings</span>
+      <!-- Quick Actions -->
+      <div class="card">
+        <div class="px-5 py-4 border-b border-navy-100">
+          <h2 class="font-serif font-bold text-navy-800">Quick Actions</h2>
+        </div>
+        <div class="p-4 space-y-2">
+          <router-link v-for="action in quickActions" :key="action.to" :to="action.to" class="flex items-center px-4 py-3 rounded-md hover:bg-navy-50 transition group">
+            <div class="w-9 h-9 rounded-lg flex items-center justify-center bg-navy-100 group-hover:bg-navy-200 transition mr-3">
+              <i :class="action.icon" class="text-navy-600"></i>
+            </div>
+            <div>
+              <p class="text-sm font-medium text-navy-700">{{ action.label }}</p>
+              <p class="text-xs text-navy-400">{{ action.desc }}</p>
+            </div>
           </router-link>
         </div>
       </div>
@@ -66,54 +70,53 @@ import { useAuthStore } from '../stores/auth'
 import api from '../api'
 
 const authStore = useAuthStore()
-const dashboard = ref({})
-const complaints = ref([])
+const dashboard = ref({ municipalities: 0, departments: 0, managers: 0, users: 0, pending: 0, resolved: 0, in_progress: 0 })
+const recentComplaints = ref([])
 
 const stats = computed(() => {
   const d = dashboard.value
-  const role = authStore.role
-  if (role === 'super_admin') {
+  if (authStore.isSuperAdmin) {
     return [
-      { label: 'Governments', value: d.governments || 0, iconBg: 'bg-civic-600', emoji: '??' },
-      { label: 'Departments', value: d.departments || 0, iconBg: 'bg-purple-500', emoji: '??' },
-      { label: 'Admin Accounts', value: d.admins || 0, iconBg: 'bg-emerald-500', emoji: '??' },
-      { label: 'Registered Citizens', value: d.users || 0, iconBg: 'bg-amber-500', emoji: '??' },
-    ]
-  }
-  if (role === 'manager') {
-    return [
-      { label: 'Pending Complaints', value: d.pending_complaints || 0, iconBg: 'bg-orange-500', emoji: '?' },
-      { label: 'In Progress', value: d.in_progress_complaints || 0, iconBg: 'bg-blue-500', emoji: '?' },
-      { label: 'Resolved', value: d.resolved_complaints || 0, iconBg: 'bg-green-500', emoji: '?' },
-      { label: 'Departments', value: d.departments || 0, iconBg: 'bg-purple-500', emoji: '??' },
+      { label: 'Municipalities', value: d.municipalities || 0, icon: 'bi bi-building text-navy-600', bg: 'bg-navy-100' },
+      { label: 'Managers', value: d.managers || 0, icon: 'bi bi-shield-check text-green-600', bg: 'bg-green-100' },
+      { label: 'Departments', value: d.departments || 0, icon: 'bi bi-diagram-3 text-blue-600', bg: 'bg-blue-100' },
+      { label: 'Citizens', value: d.users || 0, icon: 'bi bi-people text-amber-600', bg: 'bg-amber-100' },
     ]
   }
   return [
-    { label: 'Pending Complaints', value: d.pending_complaints || 0, iconBg: 'bg-orange-500', emoji: '?' },
-    { label: 'Resolved', value: d.resolved_complaints || 0, iconBg: 'bg-green-500', emoji: '?' },
+    { label: 'Departments', value: d.departments || 0, icon: 'bi bi-diagram-3 text-navy-600', bg: 'bg-navy-100' },
+    { label: 'Pending', value: d.pending || 0, icon: 'bi bi-clock text-amber-600', bg: 'bg-amber-100' },
+    { label: 'In Progress', value: d.in_progress || 0, icon: 'bi bi-arrow-repeat text-blue-600', bg: 'bg-blue-100' },
+    { label: 'Resolved', value: d.resolved || 0, icon: 'bi bi-check-circle text-green-600', bg: 'bg-green-100' },
   ]
 })
 
-function statusClass(status) {
-  const c = { pending: 'bg-yellow-100 text-yellow-800', in_progress: 'bg-blue-100 text-blue-800', resolved: 'bg-green-100 text-green-800', rejected: 'bg-red-100 text-red-800' }
-  return c[status] || 'bg-gray-100 text-gray-800'
+const quickActions = computed(() => {
+  const actions = []
+  if (authStore.canManageComplaints) actions.push({ to: '/complaints', label: 'Manage Complaints', desc: 'Review and respond', icon: 'bi bi-exclamation-triangle' })
+  if (authStore.canManageArticles) actions.push({ to: '/articles', label: 'Manage Articles', desc: 'Create and edit', icon: 'bi bi-newspaper' })
+  if (authStore.canManageDepartments) actions.push({ to: '/departments', label: 'Departments', desc: 'View departments', icon: 'bi bi-diagram-3' })
+  if (authStore.canManageAdmins) actions.push({ to: '/admins', label: authStore.isSuperAdmin ? 'Managers' : 'Staff', desc: 'Manage personnel', icon: 'bi bi-shield-check' })
+  if (authStore.canManageMunicipalities) actions.push({ to: '/municipalities', label: 'Municipalities', desc: 'Manage corporations', icon: 'bi bi-building' })
+  actions.push({ to: '/settings', label: 'Settings', desc: 'Profile & preferences', icon: 'bi bi-gear' })
+  return actions
+})
+
+function formatDate(d) {
+  if (!d) return ''
+  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+function statusClass(s) {
+  const map = { pending: 'badge-warning', in_progress: 'badge-info', resolved: 'badge-success', rejected: 'badge-danger' }
+  return map[s] || 'badge-info'
 }
 
 onMounted(async () => {
   try {
     const { data } = await api.get('/api/v1/admin/dashboard')
     dashboard.value = data
+    recentComplaints.value = data.recent_complaints || []
   } catch {}
-  if (authStore.canManageComplaints) {
-    try {
-      const govId = authStore.user?.government_id
-      const deptId = authStore.user?.department_id
-      let params = {}
-      if (govId) params.government_id = govId
-      if (authStore.isDeptManager && deptId) params.department_id = deptId
-      const { data } = await api.get('/api/v1/complaints/', { params })
-      complaints.value = Array.isArray(data) ? data.slice(0, 10) : []
-    } catch {}
-  }
 })
 </script>

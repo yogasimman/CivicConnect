@@ -15,6 +15,12 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/municipalities',
+    name: 'Municipalities',
+    component: () => import('../views/MunicipalitiesView.vue'),
+    meta: { requiresAuth: true, roles: ['super_admin'] },
+  },
+  {
     path: '/complaints',
     name: 'Complaints',
     component: () => import('../views/ComplaintsView.vue'),
@@ -27,10 +33,28 @@ const routes = [
     meta: { requiresAuth: true, roles: ['manager', 'dept_manager'] },
   },
   {
+    path: '/articles/new',
+    name: 'NewArticle',
+    component: () => import('../views/ArticleEditorView.vue'),
+    meta: { requiresAuth: true, roles: ['manager', 'dept_manager'] },
+  },
+  {
+    path: '/articles/:id/edit',
+    name: 'EditArticle',
+    component: () => import('../views/ArticleEditorView.vue'),
+    meta: { requiresAuth: true, roles: ['manager', 'dept_manager'] },
+  },
+  {
+    path: '/community-posts',
+    name: 'CommunityPosts',
+    component: () => import('../views/CommunityPostsView.vue'),
+    meta: { requiresAuth: true, roles: ['manager', 'dept_manager'] },
+  },
+  {
     path: '/departments',
     name: 'Departments',
     component: () => import('../views/DepartmentsView.vue'),
-    meta: { requiresAuth: true, roles: ['super_admin', 'manager'] },
+    meta: { requiresAuth: true, roles: ['manager', 'dept_manager'] },
   },
   {
     path: '/admins',
@@ -42,7 +66,7 @@ const routes = [
     path: '/users',
     name: 'Users',
     component: () => import('../views/UsersView.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, roles: ['manager', 'dept_manager'] },
   },
   {
     path: '/settings',

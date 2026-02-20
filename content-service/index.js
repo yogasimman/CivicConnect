@@ -16,6 +16,9 @@ const grpc = require("@grpc/grpc-js");
 const protoLoader = require("@grpc/proto-loader");
 const path = require("path");
 const cors = require("cors");
+const Minio = require("minio");
+const multer = require("multer");
+const { v4: uuidv4 } = require("uuid");
 
 // ── Env helpers ─────────────────────────────────────────────────────────────
 
@@ -23,6 +26,44 @@ const env = (key, fallback) => process.env[key] || fallback;
 
 const PORT      = env("PORT", "8082");
 const GRPC_PORT = env("GRPC_PORT", "50051");
+
+// ── MinIO Object Storage ────────────────────────────────────────────────────
+
+const MINIO_BUCKET = env("MINIO_BUCKET", "civic-uploads");
+const minioClient = new Minio.Client({
+  endPoint:  env("MINIO_HOST", "localhost"),
+  port:      parseInt(env("MINIO_PORT", "9000")),
+  useSSL:    false,
+  accessKey: env("MINIO_ACCESS_KEY", "civic_minio"),
+  secretKey: env("MINIO_SECRET_KEY", "civic_minio_secret"),
+});
+
+const ALLOWED_MIME = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"];
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_SIZE } });
+
+async function ensureMinioBucket() {
+  for (let i = 1; i <= 15; i++) {
+    try {
+      const exists = await minioClient.bucketExists(MINIO_BUCKET);
+      if (!exists) {
+        await minioClient.makeBucket(MINIO_BUCKET);
+        // Public read policy so NGINX can proxy objects
+        const policy = JSON.stringify({
+          Version: "2012-10-17",
+          Statement: [{ Effect: "Allow", Principal: { AWS: ["*"] }, Action: ["s3:GetObject"], Resource: [`arn:aws:s3:::${MINIO_BUCKET}/*`] }],
+        });
+        await minioClient.setBucketPolicy(MINIO_BUCKET, policy);
+      }
+      console.log(`[content-service] ✅ MinIO bucket '${MINIO_BUCKET}' ready`);
+      return;
+    } catch (err) {
+      console.log(`[content-service] Waiting for MinIO... (${i}/15) ${err.message}`);
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+  console.warn("[content-service] ⚠️ MinIO not available — file uploads disabled");
+}
 
 // ── PostgreSQL ──────────────────────────────────────────────────────────────
 
@@ -39,18 +80,20 @@ async function connectPostgres() {
     try {
       const client = await pool.connect();
       await client.query(`
-        -- Social Posts
+        -- Social Posts (with government/department for Reddit-like org)
         CREATE TABLE IF NOT EXISTS posts (
-          post_id      SERIAL PRIMARY KEY,
-          user_id      INTEGER NOT NULL,
-          title        VARCHAR(500) NOT NULL,
-          content      TEXT NOT NULL,
-          category     VARCHAR(100) DEFAULT 'general',
-          post_type    VARCHAR(50) DEFAULT 'text',
-          location     VARCHAR(200),
-          ai_summary   TEXT,
-          created_at   TIMESTAMPTZ DEFAULT NOW(),
-          updated_at   TIMESTAMPTZ DEFAULT NOW()
+          post_id        SERIAL PRIMARY KEY,
+          user_id        INTEGER NOT NULL,
+          title          VARCHAR(500) NOT NULL,
+          content        TEXT NOT NULL,
+          category       VARCHAR(100) DEFAULT 'general',
+          post_type      VARCHAR(50) DEFAULT 'text',
+          location       VARCHAR(200),
+          government_id  INTEGER,
+          department_id  INTEGER,
+          ai_summary     TEXT,
+          created_at     TIMESTAMPTZ DEFAULT NOW(),
+          updated_at     TIMESTAMPTZ DEFAULT NOW()
         );
 
         -- Post Media
@@ -79,28 +122,40 @@ async function connectPostgres() {
           UNIQUE(user_id, post_id)
         );
 
-        -- Comments on posts
+        -- Comments on posts (with official response support)
         CREATE TABLE IF NOT EXISTS comments (
-          comment_id   SERIAL PRIMARY KEY,
-          user_id      INTEGER NOT NULL,
-          post_id      INTEGER REFERENCES posts(post_id) ON DELETE CASCADE,
-          content      TEXT NOT NULL,
-          created_at   TIMESTAMPTZ DEFAULT NOW()
+          comment_id     SERIAL PRIMARY KEY,
+          user_id        INTEGER NOT NULL,
+          post_id        INTEGER REFERENCES posts(post_id) ON DELETE CASCADE,
+          content        TEXT NOT NULL,
+          is_official    BOOLEAN DEFAULT FALSE,
+          admin_id       INTEGER,
+          dept_id        INTEGER,
+          dept_name      VARCHAR(200),
+          created_at     TIMESTAMPTZ DEFAULT NOW()
         );
 
         -- Government Articles (JSONB content, full-text search)
         CREATE TABLE IF NOT EXISTS articles (
-          article_id    SERIAL PRIMARY KEY,
-          government_id INTEGER NOT NULL,
-          category      INTEGER,
-          user_id       INTEGER,
-          title         VARCHAR(500) NOT NULL,
-          summary       TEXT,
-          content       JSONB,
-          images        TEXT[],
-          search_vector TSVECTOR,
-          created_at    TIMESTAMPTZ DEFAULT NOW(),
-          updated_at    TIMESTAMPTZ DEFAULT NOW()
+          article_id      SERIAL PRIMARY KEY,
+          government_id   INTEGER NOT NULL,
+          category        VARCHAR(200),
+          user_id         INTEGER,
+          title           VARCHAR(500) NOT NULL,
+          summary         TEXT,
+          content         JSONB,
+          images          TEXT[],
+          thumbnail_url   TEXT,
+          author_type     VARCHAR(50) DEFAULT 'admin',
+          author_admin_id INTEGER,
+          author_dept_id  INTEGER,
+          author_dept_name VARCHAR(200),
+          author_gov_name  VARCHAR(200),
+          author_logo_url  TEXT,
+          ai_summary      TEXT,
+          search_vector   TSVECTOR,
+          created_at      TIMESTAMPTZ DEFAULT NOW(),
+          updated_at      TIMESTAMPTZ DEFAULT NOW()
         );
 
         -- Full-text search index on articles
@@ -118,6 +173,29 @@ async function connectPostgres() {
         CREATE TRIGGER trg_articles_search
           BEFORE INSERT OR UPDATE ON articles
           FOR EACH ROW EXECUTE FUNCTION articles_search_trigger();
+
+        -- Schema migrations for existing installations
+        DO $$ BEGIN
+          ALTER TABLE posts ADD COLUMN IF NOT EXISTS government_id INTEGER;
+          ALTER TABLE posts ADD COLUMN IF NOT EXISTS department_id INTEGER;
+          ALTER TABLE comments ADD COLUMN IF NOT EXISTS is_official BOOLEAN DEFAULT FALSE;
+          ALTER TABLE comments ADD COLUMN IF NOT EXISTS admin_id INTEGER;
+          ALTER TABLE comments ADD COLUMN IF NOT EXISTS dept_id INTEGER;
+          ALTER TABLE comments ADD COLUMN IF NOT EXISTS dept_name VARCHAR(200);
+          ALTER TABLE articles ADD COLUMN IF NOT EXISTS thumbnail_url TEXT;
+          ALTER TABLE articles ADD COLUMN IF NOT EXISTS author_type VARCHAR(50) DEFAULT 'admin';
+          ALTER TABLE articles ADD COLUMN IF NOT EXISTS author_admin_id INTEGER;
+          ALTER TABLE articles ADD COLUMN IF NOT EXISTS author_dept_id INTEGER;
+          ALTER TABLE articles ADD COLUMN IF NOT EXISTS author_dept_name VARCHAR(200);
+          ALTER TABLE articles ADD COLUMN IF NOT EXISTS author_gov_name VARCHAR(200);
+          ALTER TABLE articles ADD COLUMN IF NOT EXISTS author_logo_url TEXT;
+          ALTER TABLE articles ADD COLUMN IF NOT EXISTS ai_summary TEXT;
+          -- Migrate category from INTEGER to VARCHAR if needed
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='articles' AND column_name='category' AND data_type='integer') THEN
+            ALTER TABLE articles ALTER COLUMN category TYPE VARCHAR(200) USING category::VARCHAR;
+          END IF;
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END $$;
       `);
       client.release();
       console.log("[content-service] ✅ PostgreSQL Connected Successfully");
@@ -269,16 +347,37 @@ app.get("/health", (_req, res) => {
   res.json({ status: "healthy", service: "content-service" });
 });
 
+// ── File Upload (MinIO) ─────────────────────────────────────────────────────
+
+app.post("/upload", upload.single("file"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No file provided" });
+  if (!ALLOWED_MIME.includes(req.file.mimetype)) {
+    return res.status(400).json({ error: "File type not allowed. Use: jpg, png, gif, webp, svg" });
+  }
+  const ext = path.extname(req.file.originalname) || ".jpg";
+  const objectName = `${Date.now()}-${uuidv4()}${ext}`;
+  try {
+    await minioClient.putObject(MINIO_BUCKET, objectName, req.file.buffer, req.file.size, {
+      "Content-Type": req.file.mimetype,
+    });
+    const url = `/uploads/${MINIO_BUCKET}/${objectName}`;
+    res.json({ url, objectName, bucket: MINIO_BUCKET });
+  } catch (err) {
+    console.error("[content-service] Upload failed:", err.message);
+    res.status(500).json({ error: "Upload failed" });
+  }
+});
+
 // ── Posts CRUD ───────────────────────────────────────────────────────────────
 
 // Create post
 app.post("/posts", async (req, res) => {
-  const { user_id, title, content, category, post_type, location } = req.body;
+  const { user_id, title, content, category, post_type, location, government_id, department_id } = req.body;
   try {
     const { rows } = await pool.query(
-      `INSERT INTO posts (user_id, title, content, category, post_type, location)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [user_id, title, content, category || "general", post_type || "text", location]
+      `INSERT INTO posts (user_id, title, content, category, post_type, location, government_id, department_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [user_id, title, content, category || "general", post_type || "text", location, government_id || null, department_id || null]
     );
     // Publish to RabbitMQ for AI summarization
     if (amqpChannel) {
@@ -441,11 +540,12 @@ app.delete("/bookmarks", async (req, res) => {
 // ── Comments ────────────────────────────────────────────────────────────────
 
 app.post("/comments", async (req, res) => {
-  const { user_id, post_id, content } = req.body;
+  const { user_id, post_id, content, is_official, admin_id, dept_id, dept_name } = req.body;
   try {
     const { rows } = await pool.query(
-      "INSERT INTO comments (user_id, post_id, content) VALUES ($1, $2, $3) RETURNING *",
-      [user_id, post_id, content]
+      `INSERT INTO comments (user_id, post_id, content, is_official, admin_id, dept_id, dept_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [user_id, post_id, content, is_official || false, admin_id || null, dept_id || null, dept_name || null]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -503,12 +603,20 @@ app.get("/articles/:id", async (req, res) => {
 });
 
 app.post("/articles", async (req, res) => {
-  const { government_id, category, user_id, title, summary, content, images } = req.body;
+  const {
+    government_id, category, user_id, title, summary, content, images,
+    thumbnail_url, author_type, author_admin_id, author_dept_id,
+    author_dept_name, author_gov_name, author_logo_url, ai_summary
+  } = req.body;
   try {
     const { rows } = await pool.query(
-      `INSERT INTO articles (government_id, category, user_id, title, summary, content, images)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [government_id, category, user_id, title, summary, JSON.stringify(content), images]
+      `INSERT INTO articles (government_id, category, user_id, title, summary, content, images,
+       thumbnail_url, author_type, author_admin_id, author_dept_id, author_dept_name,
+       author_gov_name, author_logo_url, ai_summary)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
+      [government_id, category, user_id, title, summary, JSON.stringify(content), images,
+       thumbnail_url, author_type || 'admin', author_admin_id, author_dept_id,
+       author_dept_name, author_gov_name, author_logo_url, ai_summary]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -517,13 +625,15 @@ app.post("/articles", async (req, res) => {
 });
 
 app.put("/articles/:id", async (req, res) => {
-  const { title, summary, content, images } = req.body;
+  const { title, summary, content, images, category, thumbnail_url, ai_summary } = req.body;
   try {
     const { rows } = await pool.query(
       `UPDATE articles SET title = COALESCE($1, title), summary = COALESCE($2, summary),
-       content = COALESCE($3, content), images = COALESCE($4, images), updated_at = NOW()
-       WHERE article_id = $5 RETURNING *`,
-      [title, summary, content ? JSON.stringify(content) : null, images, req.params.id]
+       content = COALESCE($3, content), images = COALESCE($4, images),
+       category = COALESCE($5, category), thumbnail_url = COALESCE($6, thumbnail_url),
+       ai_summary = COALESCE($7, ai_summary), updated_at = NOW()
+       WHERE article_id = $8 RETURNING *`,
+      [title, summary, content ? JSON.stringify(content) : null, images, category, thumbnail_url, ai_summary, req.params.id]
     );
     if (!rows.length) return res.status(404).json({ error: "Article not found" });
     res.json(rows[0]);
@@ -550,6 +660,7 @@ async function main() {
   await connectPostgres();
   await connectRabbitMQ();
   await connectRedis();
+  await ensureMinioBucket();
 
   console.log("[content-service] ✅ All connections established – Connected Successfully");
 
