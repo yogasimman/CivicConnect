@@ -143,7 +143,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch, reactive } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, reactive } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import api from '../api'
 
@@ -159,6 +159,7 @@ const expandedPosts = ref([])
 const postComments = reactive({})
 const replyText = reactive({})
 const replying = reactive({})
+let postsPollId = null
 
 const filteredPosts = computed(() => {
   let list = posts.value
@@ -253,5 +254,15 @@ watch(page, loadPosts)
 
 onMounted(() => {
   loadPosts()
+  postsPollId = window.setInterval(() => {
+    loadPosts()
+  }, 10000)
+})
+
+onBeforeUnmount(() => {
+  if (postsPollId) {
+    window.clearInterval(postsPollId)
+    postsPollId = null
+  }
 })
 </script>

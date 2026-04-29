@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -40,7 +41,7 @@ type Complaint struct {
 	Category       string    `gorm:"not null" json:"category"`
 	Description    string    `gorm:"type:text;not null" json:"description"`
 	MultimediaURLs string    `gorm:"type:text" json:"multimedia_urls,omitempty"` // JSON array of image URLs
-	Status         string    `gorm:"default:pending" json:"status"`             // pending | in_progress | resolved | rejected
+	Status         string    `gorm:"default:pending" json:"status"`              // pending | in_progress | resolved | rejected
 	Upvotes        int       `gorm:"default:0" json:"upvotes"`
 	Downvotes      int       `gorm:"default:0" json:"downvotes"`
 	Latitude       float64   `json:"latitude"`
@@ -79,14 +80,14 @@ type ComplaintComment struct {
 
 // ActionTaken — government response to a complaint with completion %
 type ActionTaken struct {
-	ID                  uint      `gorm:"primaryKey" json:"id"`
-	ComplaintID         uint      `gorm:"index;not null" json:"complaint_id"`
-	GovernmentID        uint      `gorm:"not null" json:"government_id"`
-	AdminID             uint      `gorm:"not null" json:"admin_id"`
-	ActionDetails       string    `gorm:"type:text;not null" json:"action_details"`
-	ActionMultimediaURLs string   `gorm:"type:text" json:"action_multimedia_urls,omitempty"`
-	CompletionPercent   int       `gorm:"default:0" json:"completion_percentage"`
-	CreatedAt           time.Time `json:"created_at"`
+	ID                   uint      `gorm:"primaryKey" json:"id"`
+	ComplaintID          uint      `gorm:"index;not null" json:"complaint_id"`
+	GovernmentID         uint      `gorm:"not null" json:"government_id"`
+	AdminID              uint      `gorm:"not null" json:"admin_id"`
+	ActionDetails        string    `gorm:"type:text;not null" json:"action_details"`
+	ActionMultimediaURLs string    `gorm:"type:text" json:"action_multimedia_urls,omitempty"`
+	CompletionPercent    int       `gorm:"default:0" json:"completion_percentage"`
+	CreatedAt            time.Time `json:"created_at"`
 }
 
 // ── Globals ─────────────────────────────────────────────────────────────────
@@ -232,6 +233,7 @@ func healthHandler(c *gin.Context) {
 // List complaints for a government (priority-sorted)
 func listComplaintsHandler(c *gin.Context) {
 	govID := c.Query("government_id")
+	govIDs := c.Query("government_ids") // comma-separated: "1,2,3"
 	status := c.Query("status")
 	deptID := c.Query("department_id")
 
@@ -239,6 +241,18 @@ func listComplaintsHandler(c *gin.Context) {
 	query := db
 	if govID != "" {
 		query = query.Where("government_id = ?", govID)
+	} else if govIDs != "" {
+		ids := strings.Split(govIDs, ",")
+		validIDs := []string{}
+		for _, id := range ids {
+			id = strings.TrimSpace(id)
+			if id != "" {
+				validIDs = append(validIDs, id)
+			}
+		}
+		if len(validIDs) > 0 {
+			query = query.Where("government_id IN ?", validIDs)
+		}
 	}
 	if status != "" {
 		query = query.Where("status = ?", status)
@@ -423,18 +437,25 @@ func nearbyComplaintsHandler(c *gin.Context) {
 	lat, _ := strconv.ParseFloat(c.Query("lat"), 64)
 	lng, _ := strconv.ParseFloat(c.Query("lng"), 64)
 	radius := c.DefaultQuery("radius", "5000") // meters
+	category := c.Query("category")
 
 	var complaints []Complaint
-	db.Raw(`
+	query := `
 		SELECT * FROM complaints
 		WHERE ST_DWithin(
 			ST_MakePoint(longitude, latitude)::geography,
 			ST_MakePoint(?, ?)::geography,
 			?
 		)
-		ORDER BY (upvotes - downvotes * 2) DESC, created_at DESC
-	`, lng, lat, radius).Scan(&complaints)
+	`
+	args := []interface{}{lng, lat, radius}
+	if category != "" {
+		query += " AND LOWER(category) = LOWER(?)"
+		args = append(args, category)
+	}
+	query += " ORDER BY (upvotes - downvotes * 2) DESC, created_at DESC"
 
+	db.Raw(query, args...).Scan(&complaints)
 	c.JSON(http.StatusOK, complaints)
 }
 

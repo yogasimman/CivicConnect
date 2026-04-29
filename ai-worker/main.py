@@ -21,6 +21,7 @@ from concurrent import futures
 import pika
 import grpc
 import redis as redis_lib
+import httpx
 
 # Generated proto stubs (built at Docker image time)
 import summary_pb2
@@ -48,6 +49,9 @@ REDIS_HOST    = env("REDIS_HOST", "localhost")
 REDIS_PORT    = int(env("REDIS_PORT", "6379"))
 REDIS_PASSWORD = env("REDIS_PASSWORD", "redis_secret_2026")
 GEMINI_API_KEY = env("GEMINI_API_KEY", "mock-api-key")
+GROQ_API_KEY = env("GROQ_API_KEY", "")
+GROQ_MODEL = env("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_BASE_URL = env("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
 GRPC_PORT      = env("AI_GRPC_PORT", "50052")
 
 # ── Redis Connection ─────────────────────────────────────────────────────────
@@ -72,13 +76,60 @@ def connect_redis():
             time.sleep(2)
     raise RuntimeError("Redis connection failed")
 
-# ── Mock LLM API ─────────────────────────────────────────────────────────────
+# ── LLM API (Groq + fallback) ───────────────────────────────────────────────
+
+def groq_chat_completion(system_prompt: str, user_prompt: str, max_tokens: int = 500) -> str:
+    """Call Groq Chat Completions API using OpenAI-compatible schema."""
+    if not GROQ_API_KEY:
+        raise RuntimeError("GROQ_API_KEY is not configured")
+
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.2,
+        "max_tokens": max_tokens,
+    }
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    with httpx.Client(timeout=40.0) as client:
+        resp = client.post(f"{GROQ_BASE_URL}/chat/completions", headers=headers, json=payload)
+        resp.raise_for_status()
+        body = resp.json()
+        choices = body.get("choices", [])
+        if not choices:
+            raise RuntimeError("Groq returned no choices")
+        content = (choices[0].get("message", {}).get("content") or "").strip()
+        if not content:
+            raise RuntimeError("Groq returned empty content")
+        return content
 
 def mock_llm_chat(messages: list) -> str:
     """Simulates an LLM chat response (replace with Gemini/Mistral in production)."""
-    log.info("🤖 Mock LLM – generating chat response...")
-    time.sleep(0.3)
     last_msg = messages[-1].get("content", "") if messages else ""
+    if GROQ_API_KEY:
+        try:
+            history_lines = []
+            for msg in messages[-10:]:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                history_lines.append(f"{role}: {content}")
+            prompt = "\n".join(history_lines) if history_lines else last_msg
+            return groq_chat_completion(
+                system_prompt="You are a civic engagement assistant. Provide practical, safe, concise help.",
+                user_prompt=prompt,
+                max_tokens=500,
+            )
+        except Exception as e:
+            log.error(f"Groq chat failed, using fallback: {e}")
+
+    log.info("🤖 Mock fallback – generating chat response...")
+    time.sleep(0.2)
     return (
         f"Thank you for your message. I understand you're asking about: "
         f"'{last_msg[:80]}'. As a civic engagement assistant, I can help you with "
@@ -89,19 +140,45 @@ def mock_llm_chat(messages: list) -> str:
 
 def mock_llm_summarize(text: str) -> str:
     """Simulates an LLM summarization call."""
-    log.info("🤖 Mock LLM – generating summary...")
-    time.sleep(0.3)
+    if GROQ_API_KEY:
+        try:
+            return groq_chat_completion(
+                system_prompt=(
+                    "You are a civic content summarizer. Produce a concise summary with key points, "
+                    "public impact, and actionable takeaway in 3-5 bullet points."
+                ),
+                user_prompt=f"Summarize the following civic post:\n\n{text}",
+                max_tokens=320,
+            )
+        except Exception as e:
+            log.error(f"Groq summarize failed, using fallback: {e}")
+
+    log.info("🤖 Mock fallback – generating summary...")
+    time.sleep(0.2)
     words = text.split()
-    if len(words) <= 20:
+    if len(words) <= 24:
         return text
-    return f"[AI Summary] {' '.join(words[:20])}..."
+    return f"[AI Summary] {' '.join(words[:24])}..."
 
 
 def mock_llm_analyze_complaint(data: dict) -> str:
     """Simulates complaint analysis."""
-    log.info("🤖 Mock LLM – analyzing complaint...")
-    time.sleep(0.2)
     category = data.get("category", "unknown")
+    if GROQ_API_KEY:
+        try:
+            return groq_chat_completion(
+                system_prompt=(
+                    "You are a civic complaint triage assistant. Return severity, likely department, "
+                    "and suggested SLA in concise text."
+                ),
+                user_prompt=f"Analyze this complaint payload: {json.dumps(data)}",
+                max_tokens=240,
+            )
+        except Exception as e:
+            log.error(f"Groq complaint analysis failed, using fallback: {e}")
+
+    log.info("🤖 Mock fallback – analyzing complaint...")
+    time.sleep(0.2)
     return (
         f"[AI Analysis] Category: {category}. "
         f"Priority recommendation: {'high' if category in ('pothole', 'water', 'sewage') else 'medium'}. "
@@ -112,8 +189,18 @@ def mock_llm_analyze_complaint(data: dict) -> str:
 
 def mock_llm_assistant(query: str) -> str:
     """Simulates an assistant Q&A response."""
-    log.info("🤖 Mock LLM – assistant Q&A...")
-    time.sleep(0.3)
+    if GROQ_API_KEY:
+        try:
+            return groq_chat_completion(
+                system_prompt="You are a helpful civic assistant. Provide practical, accurate, concise guidance.",
+                user_prompt=query,
+                max_tokens=320,
+            )
+        except Exception as e:
+            log.error(f"Groq assistant failed, using fallback: {e}")
+
+    log.info("🤖 Mock fallback – assistant Q&A...")
+    time.sleep(0.2)
     return (
         f"Here's what I found regarding your query: '{query[:60]}'. "
         f"For detailed information, please check the relevant section of the app "
@@ -317,6 +404,10 @@ def connect_rabbitmq() -> pika.BlockingConnection:
 
 def main():
     log.info("Starting Civic Connect AI Worker...")
+    if GROQ_API_KEY:
+        log.info(f"✅ Groq configured with model: {GROQ_MODEL}")
+    else:
+        log.warning("⚠️ GROQ_API_KEY not set – AI worker will use mock fallbacks")
 
     connect_redis()
     grpc_server = start_grpc_server()

@@ -1,0 +1,107 @@
+[
+  {
+    "id": "policy_central_swachh_bharat_urban",
+    "jurisdiction": "central",
+    "category": "urban-sanitation",
+    "title": "Swachh Bharat Mission - Urban 2.0",
+    "content": "SBM-U 2.0 focuses on garbage-free cities, source segregation, scientific waste processing, remediation of legacy dumpsites, and stronger urban sanitation outcomes. Urban local bodies are expected to implement door-to-door collection, wet-dry segregation, MRFs, composting/biomethanation, and citizen awareness campaigns. For complaints: include location, service gap details, and frequency of non-collection so city sanitation teams can route tickets quickly."
+  },
+  {
+    "id": "policy_central_amrut",
+    "jurisdiction": "central",
+    "category": "water-sewerage",
+    "title": "AMRUT 2.0 (Atal Mission for Rejuvenation and Urban Transformation)",
+    "content": "AMRUT 2.0 emphasizes universal water supply coverage, sewerage and septage management, and water body rejuvenation in urban areas. Municipal service benchmarks include continuity of supply, non-revenue water reduction, treatment capacity, and household connections. Citizens should report low pressure, contaminated water, and sewage overflow with street-level location and time patterns for proper engineering response."
+  },
+  {
+    "id": "policy_central_smart_cities",
+    "jurisdiction": "central",
+    "category": "urban-governance",
+    "title": "Smart Cities Mission",
+    "content": "The mission supports area-based development and pan-city smart solutions including integrated command centers, e-governance, mobility, and urban service digitization. Complaint systems should help with evidence-backed incident reporting, geo-tagging, and progress updates. Citizens should be informed about service SLAs, escalation paths, and transparent closure notes."
+  },
+  {
+    "id": "policy_central_nulm",
+    "jurisdiction": "central",
+    "category": "livelihoods",
+    "title": "DAY-NULM (Deendayal Antyodaya Yojana - National Urban Livelihoods Mission)",
+    "content": "DAY-NULM targets urban poverty reduction through self-employment, skilling, SHG strengthening, and shelters for urban homeless. Municipal-level social development wings and ULB offices coordinate implementation. Citizen support queries should include scheme eligibility, required documents, bank-linkage process, and nearest facilitation center."
+  },
+  {
+    "id": "policy_central_pmay_urban",
+    "jurisdiction": "central",
+    "category": "housing",
+    "title": "PMAY-U (Pradhan Mantri Awas Yojana - Urban)",
+    "content": "PMAY-U supports affordable urban housing through beneficiary-led construction, in-situ redevelopment, credit-linked subsidy, and partnership housing. Typical citizen issues involve application status, beneficiary verification, installment release delays, and title/document mismatches. Complaint handling should capture application ID, ULB name, and sanctioned component."
+  },
+  {
+    "id": "policy_central_mobility",
+    "jurisdiction": "central",
+    "category": "urban-mobility",
+    "title": "National Urban Transport Policy and Transit-Oriented Development guidance",
+    "content": "Urban transport policy prioritizes people over vehicles, multimodal integration, public transport quality, walkability, and last-mile connectivity. Local issues include damaged footpaths, missing bus shelters, unsafe crossings, and poor street lighting around transit hubs. Complaints should include exact junctions, time windows, and safety concerns for prioritized civic action."
+  },
+  {
+    "id": "policy_central_it_act",
+    "jurisdiction": "central",
+    "category": "digital-governance",
+    "title": "Digital Governance and Electronic Service Delivery principles",
+    "content": "Indian e-governance frameworks require transparent service delivery, grievance redressal traceability, and secure handling of citizen records. Civic platforms should provide audit trails, request IDs, status transitions, and secure authentication. Support responses must avoid exposing personal data and should guide users to official escalation channels for unresolved grievances."
+  },
+  {
+    "id": "policy_tn_urban_local_bodies",
+    "jurisdiction": "tamil-nadu",
+    "category": "urban-governance",
+    "title": "Tamil Nadu Urban Local Body Governance (Municipal Administration and Water Supply)",
+    "content": "Tamil Nadu's urban governance operates through corporations, municipalities, and town panchayats under MAWS administration. Service complaints should be mapped to relevant ULB wings such as solid waste, water supply, stormwater drains, roads, or public health. Department routing improves resolution speed when complaints include ward information and nearby landmarks."
+  },
+  {
+    "id": "policy_tn_cm_helpline",
+    "jurisdiction": "tamil-nadu",
+    "category": "grievance-redressal",
+    "title": "Tamil Nadu Chief Minister Grievance Redressal ecosystem (integrated grievance handling)",
+    "content": "Tamil Nadu grievance systems emphasize registration, tracking, and departmental follow-up with timeline-based closure. For effective escalation, citizens should preserve complaint IDs, photo/video evidence, and prior responses. Civic chatbot guidance should recommend escalation when there is repeated non-resolution, incorrect closure, or public safety risk."
+  },
+  {
+    "id": "policy_tn_water_supply",
+    "jurisdiction": "tamil-nadu",
+    "category": "water-sewerage",
+    "title": "Tamil Nadu Urban Water Supply and Sewerage Service Norms",
+    "content": "Urban water and sewerage operations in Tamil Nadu typically involve scheduled supply, pipeline maintenance, contamination control, and complaint response through local engineering sections. High-priority incidents include sewage overflow near residences, drinking-water contamination, and prolonged no-supply. Reports should include street, ward, duration, odor/quality notes, and affected households."
+  },
+  {
+    "id": "policy_tn_solid_waste",
+    "jurisdiction": "tamil-nadu",
+    "category": "urban-sanitation",
+    "title": "Tamil Nadu Solid Waste Management implementation norms",
+    "content": "Tamil Nadu ULBs are expected to follow segregation, regular collection, safe transport, and scientific processing of municipal waste. Typical citizen complaints include missed pickup, open dumping, burning of waste, and overflowing bins. The grievance response should prioritize hotspot mapping, repeat incident tracking, and ward-level accountability."
+  },
+  {
+    "id": "policy_tn_public_health",
+    "jurisdiction": "tamil-nadu",
+    "category": "public-health",
+    "title": "Tamil Nadu Public Health and Sanitation Civic Response Practices",
+    "content": "Public health complaints in urban Tamil Nadu include mosquito breeding, stagnant water, unsafe sanitation, and waste accumulation near schools or markets. Response coordination generally spans public health inspectors, sanitation teams, and engineering units. Citizens should provide location, recurrence pattern, and vulnerable population impact to improve prioritization."
+  },
+  {
+    "id": "policy_tn_roads_stormwater",
+    "jurisdiction": "tamil-nadu",
+    "category": "roads-drainage",
+    "title": "Tamil Nadu Urban Roads and Stormwater Drain maintenance priorities",
+    "content": "Urban road maintenance and stormwater management in Tamil Nadu focus on monsoon resilience, pothole reduction, drain desilting, and flood-risk mitigation. High-severity complaints involve deep potholes on main corridors, blocked drains before rain events, and recurring waterlogging. Good reports include precise geo-location, severity estimate, and traffic/public safety impact."
+  },
+  {
+    "id": "policy_tn_disaster_monsoon",
+    "jurisdiction": "tamil-nadu",
+    "category": "disaster-preparedness",
+    "title": "Tamil Nadu Monsoon Preparedness and Urban Disaster Response",
+    "content": "Monsoon preparedness requires pre-rain drain maintenance, emergency response mapping, and communication channels for flood-prone zones. Civic assistants should guide users to immediate safety actions for dangerous flooding and then raise detailed complaints for infrastructure follow-up. Responses should distinguish emergency situations from routine maintenance grievances."
+  },
+  {
+    "id": "policy_tn_e_governance",
+    "jurisdiction": "tamil-nadu",
+    "category": "digital-governance",
+    "title": "Tamil Nadu e-Governance service delivery and citizen grievance digitization",
+    "content": "Tamil Nadu digital service delivery expects citizen requests to be trackable, time-bounded, and auditable across departments. Chatbot guidance should encourage structured complaint descriptions, evidence attachments, and periodic status checks. If a request is incorrectly closed, users should be advised to reopen/escalate with clear reference to earlier ticket numbers."
+  }
+]

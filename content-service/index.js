@@ -26,6 +26,31 @@ const env = (key, fallback) => process.env[key] || fallback;
 
 const PORT      = env("PORT", "8082");
 const GRPC_PORT = env("GRPC_PORT", "50051");
+const CHATBOT_SERVICE_URL = env("CHATBOT_SERVICE_URL", "http://chatbot-service:8084");
+const ENABLE_CHATBOT_INGEST_WEBHOOK = env("ENABLE_CHATBOT_INGEST_WEBHOOK", "true").toLowerCase() === "true";
+
+async function notifyChatbotIngest(docType, payload) {
+  if (!ENABLE_CHATBOT_INGEST_WEBHOOK) return;
+  if (!payload || typeof payload !== "object") return;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2000);
+  try {
+    const res = await fetch(`${CHATBOT_SERVICE_URL}/ingest/event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ doc_type: docType, payload }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      console.warn(`[content-service] chatbot ingest webhook non-200 (${res.status}) for ${docType}`);
+    }
+  } catch (err) {
+    console.warn(`[content-service] chatbot ingest webhook failed for ${docType}: ${err.message}`);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 // ── MinIO Object Storage ────────────────────────────────────────────────────
 
@@ -103,6 +128,12 @@ async function connectPostgres() {
           media_type   VARCHAR(50) DEFAULT 'image',
           media_url    TEXT NOT NULL
         );
+
+        -- Post image URLs (direct column for simpler queries)
+        DO $$ BEGIN
+          ALTER TABLE posts ADD COLUMN IF NOT EXISTS image_urls TEXT[];
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END $$;
 
         -- Likes (one per user per post)
         CREATE TABLE IF NOT EXISTS likes (
@@ -372,12 +403,21 @@ app.post("/upload", upload.single("file"), async (req, res) => {
 
 // Create post
 app.post("/posts", async (req, res) => {
-  const { user_id, title, content, category, post_type, location, government_id, department_id } = req.body;
+  const { user_id, title, content, category, post_type, location, government_id, department_id, image_urls } = req.body;
+
+  const parsedUserId = Number(user_id);
+  if (!Number.isInteger(parsedUserId) || parsedUserId <= 0) {
+    return res.status(401).json({ error: "Authentication required to create post" });
+  }
+  if (!title || !String(title).trim() || !content || !String(content).trim()) {
+    return res.status(400).json({ error: "title and content are required" });
+  }
+
   try {
     const { rows } = await pool.query(
-      `INSERT INTO posts (user_id, title, content, category, post_type, location, government_id, department_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [user_id, title, content, category || "general", post_type || "text", location, government_id || null, department_id || null]
+      `INSERT INTO posts (user_id, title, content, category, post_type, location, government_id, department_id, image_urls)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [parsedUserId, String(title).trim(), String(content).trim(), category || "general", post_type || "text", location, government_id || null, department_id || null, image_urls || null]
     );
     // Publish to RabbitMQ for AI summarization
     if (amqpChannel) {
@@ -387,6 +427,7 @@ app.post("/posts", async (req, res) => {
         { persistent: true }
       );
     }
+    await notifyChatbotIngest("post", rows[0]);
     res.status(201).json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -397,8 +438,10 @@ app.post("/posts", async (req, res) => {
 app.get("/posts", async (req, res) => {
   const userLat = parseFloat(req.query.lat) || 0;
   const userLon = parseFloat(req.query.lon) || 0;
+  const governmentId = req.query.government_id;
+  const governmentIds = req.query.government_ids; // comma-separated: "1,2,3"
   try {
-    const { rows } = await pool.query(`
+    let query = `
       SELECT p.*,
         COALESCE(l.like_count, 0) AS like_count,
         COALESCE(b.bookmark_count, 0) AS bookmark_count,
@@ -407,9 +450,27 @@ app.get("/posts", async (req, res) => {
       LEFT JOIN (SELECT post_id, COUNT(*) AS like_count FROM likes GROUP BY post_id) l ON l.post_id = p.post_id
       LEFT JOIN (SELECT post_id, COUNT(*) AS bookmark_count FROM bookmarks GROUP BY post_id) b ON b.post_id = p.post_id
       LEFT JOIN (SELECT post_id, COUNT(*) AS comment_count FROM comments GROUP BY post_id) cm ON cm.post_id = p.post_id
-      ORDER BY p.created_at DESC
-      LIMIT 100
-    `);
+    `;
+    const params = [];
+    const conditions = [];
+
+    if (governmentId) {
+      params.push(parseInt(governmentId));
+      conditions.push(`p.government_id = $${params.length}`);
+    } else if (governmentIds) {
+      const ids = governmentIds.split(",").map(Number).filter(n => !isNaN(n) && n > 0);
+      if (ids.length > 0) {
+        params.push(ids);
+        conditions.push(`(p.government_id = ANY($${params.length}) OR p.government_id IS NULL)`);
+      }
+    }
+
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(" AND ")}`;
+    }
+
+    query += " ORDER BY p.created_at DESC LIMIT 100";
+    const { rows } = await pool.query(query, params);
 
     // Apply composite ranking if user location provided
     if (userLat !== 0 || userLon !== 0) {
@@ -479,6 +540,7 @@ app.delete("/posts/:id", async (req, res) => {
       [req.params.id, user_id]
     );
     if (!result.rows.length) return res.status(404).json({ error: "Post not found or not owner" });
+    await notifyChatbotIngest("delete", { ids: [`post_${req.params.id}`] });
     res.json({ message: "deleted" });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -568,20 +630,30 @@ app.get("/comments/:post_id", async (req, res) => {
 // ── Articles ────────────────────────────────────────────────────────────────
 
 app.get("/articles", async (req, res) => {
-  const { government_id, search } = req.query;
+  const { government_id, government_ids, search } = req.query;
   try {
     let query = "SELECT * FROM articles";
     const params = [];
+    const conditions = [];
 
-    if (government_id && search) {
-      query += " WHERE government_id = $1 AND search_vector @@ plainto_tsquery('english', $2)";
-      params.push(government_id, search);
-    } else if (government_id) {
-      query += " WHERE government_id = $1";
-      params.push(government_id);
-    } else if (search) {
-      query += " WHERE search_vector @@ plainto_tsquery('english', $1)";
+    if (government_id) {
+      params.push(parseInt(government_id));
+      conditions.push(`government_id = $${params.length}`);
+    } else if (government_ids) {
+      const ids = government_ids.split(",").map(Number).filter(n => !isNaN(n) && n > 0);
+      if (ids.length > 0) {
+        params.push(ids);
+        conditions.push(`government_id = ANY($${params.length})`);
+      }
+    }
+
+    if (search) {
       params.push(search);
+      conditions.push(`search_vector @@ plainto_tsquery('english', $${params.length})`);
+    }
+
+    if (conditions.length > 0) {
+      query += " WHERE " + conditions.join(" AND ");
     }
 
     query += " ORDER BY created_at DESC";
@@ -618,6 +690,7 @@ app.post("/articles", async (req, res) => {
        thumbnail_url, author_type || 'admin', author_admin_id, author_dept_id,
        author_dept_name, author_gov_name, author_logo_url, ai_summary]
     );
+    await notifyChatbotIngest("article", rows[0]);
     res.status(201).json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -636,6 +709,7 @@ app.put("/articles/:id", async (req, res) => {
       [title, summary, content ? JSON.stringify(content) : null, images, category, thumbnail_url, ai_summary, req.params.id]
     );
     if (!rows.length) return res.status(404).json({ error: "Article not found" });
+    await notifyChatbotIngest("article", rows[0]);
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -646,6 +720,7 @@ app.delete("/articles/:id", async (req, res) => {
   try {
     const result = await pool.query("DELETE FROM articles WHERE article_id = $1 RETURNING article_id", [req.params.id]);
     if (!result.rows.length) return res.status(404).json({ error: "Article not found" });
+    await notifyChatbotIngest("delete", { ids: [`article_${req.params.id}`] });
     res.json({ message: "deleted" });
   } catch (err) {
     res.status(500).json({ error: err.message });

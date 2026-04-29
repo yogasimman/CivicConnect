@@ -197,7 +197,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import api from '../api'
 
@@ -214,6 +214,7 @@ const reassignDept = ref('')
 const updateStatus = ref('')
 const actions = ref([])
 const actionForm = ref({ description: '', completion: 0 })
+let complaintsPollId = null
 
 const statusFilters = [
   { label: 'All', value: '' },
@@ -331,5 +332,15 @@ async function reassignFromModal() {
 onMounted(() => {
   loadComplaints()
   loadDepartments()
+  complaintsPollId = window.setInterval(() => {
+    loadComplaints()
+  }, 10000)
+})
+
+onBeforeUnmount(() => {
+  if (complaintsPollId) {
+    window.clearInterval(complaintsPollId)
+    complaintsPollId = null
+  }
 })
 </script>

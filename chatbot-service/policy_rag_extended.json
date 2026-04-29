@@ -1,0 +1,222 @@
+[
+  {
+    "id": "policy_central_solid_waste_rules_2016",
+    "jurisdiction": "central",
+    "authority_level": "union",
+    "department": "sanitation",
+    "issue_type": "solid_waste",
+    "category": "urban-sanitation",
+    "title": "Solid Waste Management Rules, 2016 - Urban Local Bodies",
+    "content": "Urban local bodies must ensure source segregation, door-to-door collection, transport to processing facilities, and scientific disposal. Priority action includes stopping open dumping and open burning. Community complaints should include exact pickup point, recurring frequency, and photo evidence."
+  },
+  {
+    "id": "policy_central_cpwc_flood_mitigation_guidance",
+    "jurisdiction": "central",
+    "authority_level": "union",
+    "department": "public_works",
+    "issue_type": "stormwater",
+    "category": "roads-drainage",
+    "title": "Urban Flood Mitigation Guidance for Stormwater Networks",
+    "content": "Urban drainage maintenance requires pre-monsoon desilting, encroachment removal near drains, and quick clearance of choke points during heavy rain. Complaint escalation should prioritize high-traffic junctions and school or hospital corridors with recurrent waterlogging."
+  },
+  {
+    "id": "policy_central_nuhm_urban_health",
+    "jurisdiction": "central",
+    "authority_level": "union",
+    "department": "public_health",
+    "issue_type": "public_health",
+    "category": "public-health",
+    "title": "National Urban Health Mission - Urban Public Health Response",
+    "content": "Urban public health interventions include vector control, sanitation-linked disease prevention, and targeted action in dense settlements. High priority complaints include mosquito breeding near stagnant drains, waste accumulation near schools, and sewage leaks near residential clusters."
+  },
+  {
+    "id": "policy_central_disaster_management_urban_risk",
+    "jurisdiction": "central",
+    "authority_level": "union",
+    "department": "disaster_management",
+    "issue_type": "monsoon_risk",
+    "category": "disaster-preparedness",
+    "title": "Urban Risk Reduction under Disaster Management Framework",
+    "content": "City agencies should classify incidents by risk severity, route emergency incidents immediately, and maintain public updates. Chatbot guidance should separate emergency safety advice from regular maintenance requests and recommend emergency numbers for life-threatening conditions."
+  },
+  {
+    "id": "policy_central_egov_service_levels",
+    "jurisdiction": "central",
+    "authority_level": "union",
+    "department": "digital_governance",
+    "issue_type": "service_tracking",
+    "category": "digital-governance",
+    "title": "Digital Service Delivery and Grievance Tracking Standards",
+    "content": "Citizen grievance systems should provide unique ticket IDs, timeline tracking, closure reasons, and reopen workflows. Better outcomes are achieved when citizens include precise location, incident time, and prior request history in follow-up submissions."
+  },
+  {
+    "id": "policy_tn_gcc_swm_operations",
+    "jurisdiction": "tamil-nadu",
+    "authority_level": "state",
+    "department": "sanitation",
+    "issue_type": "solid_waste",
+    "category": "urban-sanitation",
+    "title": "Greater Chennai Corporation Solid Waste Operations Guidance",
+    "content": "Operational focus includes regular zone-wise collection, transfer station discipline, and prevention of bin overflow in dense wards. Complaints from Chennai should include zone, ward, nearest street or landmark, and whether the issue is repeated across consecutive days."
+  },
+  {
+    "id": "policy_tn_gcc_stormwater_desilting",
+    "jurisdiction": "tamil-nadu",
+    "authority_level": "state",
+    "department": "public_works",
+    "issue_type": "stormwater",
+    "category": "roads-drainage",
+    "title": "Chennai Stormwater Drain Desilting and Waterlogging Response",
+    "content": "Drain desilting should be completed before monsoon and monitored at known flood points. Recurring complaints should be tagged high severity when affecting schools, hospitals, transport hubs, or arterial roads."
+  },
+  {
+    "id": "policy_tn_roads_pothole_priority",
+    "jurisdiction": "tamil-nadu",
+    "authority_level": "state",
+    "department": "public_works",
+    "issue_type": "potholes",
+    "category": "roads-drainage",
+    "title": "Tamil Nadu Urban Road Pothole Prioritization Norms",
+    "content": "Potholes on bus routes, school corridors, and high-speed turns should be prioritized for urgent patching. Good reports include approximate size, lane impact, and whether accidents or near misses occurred."
+  },
+  {
+    "id": "policy_tn_water_contamination_response",
+    "jurisdiction": "tamil-nadu",
+    "authority_level": "state",
+    "department": "water_board",
+    "issue_type": "water_quality",
+    "category": "water-sewerage",
+    "title": "Tamil Nadu Urban Drinking Water Contamination Response",
+    "content": "Suspected contamination should trigger immediate inspection and advisory communication. Citizen complaints should include color, odor, time of supply, and affected streets to accelerate source tracing."
+  },
+  {
+    "id": "policy_tn_sewage_overflow_protocol",
+    "jurisdiction": "tamil-nadu",
+    "authority_level": "state",
+    "department": "water_board",
+    "issue_type": "sewage_overflow",
+    "category": "water-sewerage",
+    "title": "Tamil Nadu Urban Sewage Overflow Incident Protocol",
+    "content": "Sewage overflow incidents near residences and public institutions are high priority due to direct health risk. Reports should include exact overflow point, duration, smell intensity, and whether overflow enters homes or commercial establishments."
+  },
+  {
+    "id": "policy_tn_vector_control_urban",
+    "jurisdiction": "tamil-nadu",
+    "authority_level": "state",
+    "department": "public_health",
+    "issue_type": "vector_control",
+    "category": "public-health",
+    "title": "Tamil Nadu Urban Vector Control and Mosquito Breeding Response",
+    "content": "Vector control action should target stagnant water, construction zones, and blocked drains. Complaints should record recurrence pattern and vulnerable groups, especially schools, elderly clusters, and dense residential pockets."
+  },
+  {
+    "id": "policy_tn_market_sanitation",
+    "jurisdiction": "tamil-nadu",
+    "authority_level": "state",
+    "department": "sanitation",
+    "issue_type": "market_hygiene",
+    "category": "urban-sanitation",
+    "title": "Urban Market Sanitation and Waste Clearance Practices",
+    "content": "Markets require frequent waste lifting and anti-litter enforcement during peak hours. Complaints should identify market gate, lane, and approximate waste accumulation volume to support targeted crew deployment."
+  },
+  {
+    "id": "policy_tn_streetlighting_safety",
+    "jurisdiction": "tamil-nadu",
+    "authority_level": "state",
+    "department": "electrical_maintenance",
+    "issue_type": "streetlight_outage",
+    "category": "urban-mobility",
+    "title": "Urban Street Lighting Safety and Fault Response",
+    "content": "Streetlight outages near bus stops, schools, and pedestrian crossings should be treated as safety-critical. Complaint descriptions should include pole numbers where visible, exact street segment, and nighttime safety concerns."
+  },
+  {
+    "id": "policy_tn_public_toilet_maintenance",
+    "jurisdiction": "tamil-nadu",
+    "authority_level": "state",
+    "department": "sanitation",
+    "issue_type": "public_toilet",
+    "category": "public-health",
+    "title": "Public Toilet Hygiene and Maintenance Standards in Urban TN",
+    "content": "Public toilets should maintain water availability, regular cleaning, and safe waste disposal. Complaints should include facility location, unusable fixtures, hygiene issues, and the time of observation."
+  },
+  {
+    "id": "policy_tn_grievance_escalation_timeline",
+    "jurisdiction": "tamil-nadu",
+    "authority_level": "state",
+    "department": "grievance_cell",
+    "issue_type": "escalation",
+    "category": "grievance-redressal",
+    "title": "Tamil Nadu Urban Grievance Escalation and Closure Timeline",
+    "content": "Repeated unresolved complaints should move from ward-level handling to zonal escalation with documented closure reasoning. Citizens should attach prior ticket IDs and highlight unresolved risk impact to improve escalation quality."
+  },
+  {
+    "id": "policy_tn_urban_tree_fall_response",
+    "jurisdiction": "tamil-nadu",
+    "authority_level": "state",
+    "department": "parks_horticulture",
+    "issue_type": "tree_fall_risk",
+    "category": "disaster-preparedness",
+    "title": "Urban Tree Fall Hazard Response During Monsoon",
+    "content": "Potential tree-fall hazards near roads and power lines should be treated as preventive safety requests. Reports should include tree lean direction, branch breakage signs, and traffic exposure at the location."
+  },
+  {
+    "id": "policy_tn_lake_encroachment_watch",
+    "jurisdiction": "tamil-nadu",
+    "authority_level": "state",
+    "department": "water_resources",
+    "issue_type": "water_body_protection",
+    "category": "water-sewerage",
+    "title": "Urban Water Body Protection and Encroachment Monitoring",
+    "content": "Protection of lakes, canals, and surplus channels is critical for flood moderation. Complaints should include map reference, boundary marker if visible, and photo evidence of debris dumping or illegal narrowing."
+  },
+  {
+    "id": "policy_tn_bus_stop_accessibility",
+    "jurisdiction": "tamil-nadu",
+    "authority_level": "state",
+    "department": "urban_mobility",
+    "issue_type": "bus_stop_access",
+    "category": "urban-mobility",
+    "title": "Urban Bus Stop Safety and Accessibility Practices",
+    "content": "Bus stops should ensure safe waiting space, lighting, and accessible pedestrian approach. Complaints should mention shelter damage, flooded access points, and peak-hour passenger impact."
+  },
+  {
+    "id": "policy_tn_school_zone_safety",
+    "jurisdiction": "tamil-nadu",
+    "authority_level": "state",
+    "department": "traffic_safety",
+    "issue_type": "school_zone",
+    "category": "urban-mobility",
+    "title": "School Zone Civic Safety Response Guidance",
+    "content": "School zones require fast civic response for potholes, broken crossings, poor drainage, and failed streetlights. Complaints should include school name, gate side, and timing aligned with school traffic peaks."
+  },
+  {
+    "id": "policy_tn_building_waste_disposal",
+    "jurisdiction": "tamil-nadu",
+    "authority_level": "state",
+    "department": "sanitation",
+    "issue_type": "construction_waste",
+    "category": "urban-sanitation",
+    "title": "Construction and Demolition Waste Handling in Urban Areas",
+    "content": "Construction debris on carriageways and drains should be removed quickly to prevent accidents and flooding. Reports should include contractor details if visible, extent of spill, and blocked movement zones."
+  },
+  {
+    "id": "policy_tn_heatwave_public_space",
+    "jurisdiction": "tamil-nadu",
+    "authority_level": "state",
+    "department": "public_health",
+    "issue_type": "heatwave_risk",
+    "category": "public-health",
+    "title": "Urban Heatwave Preparedness in Public Spaces",
+    "content": "Heat-risk mitigation should prioritize drinking water points, shaded waiting areas, and vulnerable populations in dense localities. Complaints should capture failed water points, exposed waiting areas, and recurrent service gaps during high-temperature periods."
+  },
+  {
+    "id": "policy_tn_citizen_data_privacy",
+    "jurisdiction": "tamil-nadu",
+    "authority_level": "state",
+    "department": "digital_governance",
+    "issue_type": "privacy_security",
+    "category": "digital-governance",
+    "title": "Citizen Data Privacy and Grievance Platform Security",
+    "content": "Civic systems should limit personal data exposure and preserve auditable access logs for grievance updates. Users should avoid sharing sensitive IDs in public comments and use protected channels for identity verification."
+  }
+]

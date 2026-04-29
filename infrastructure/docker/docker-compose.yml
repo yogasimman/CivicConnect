@@ -107,6 +107,23 @@ services:
       timeout: 5s
       retries: 5
 
+  chromadb:
+    image: chromadb/chroma:0.5.23
+    container_name: civic-chromadb
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - chromadb_data:/chroma/chroma
+    networks:
+      - infra-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/heartbeat')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   # ═══════════════════════════════════════════════════════════════════════════
   # BACKEND SERVICES
   # ═══════════════════════════════════════════════════════════════════════════
@@ -165,6 +182,8 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+      CHATBOT_SERVICE_URL: http://chatbot-service:${CHATBOT_SERVICE_PORT}
+      ENABLE_CHATBOT_INGEST_WEBHOOK: ${ENABLE_CHATBOT_INGEST_WEBHOOK}
       PORT: ${CONTENT_SERVICE_PORT}
       GRPC_PORT: ${GRPC_PORT}
     ports:
@@ -242,6 +261,8 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       GEMINI_MODEL: ${GEMINI_MODEL}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL: ${GROQ_MODEL}
       AI_GRPC_PORT: ${AI_GRPC_PORT}
       PORT: ${AI_WORKER_PORT}
     ports:
@@ -272,16 +293,33 @@ services:
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL: ${GROQ_MODEL}
+      ENABLE_STARTUP_INGEST: ${ENABLE_STARTUP_INGEST}
+      ENABLE_PERIODIC_INGEST: ${ENABLE_PERIODIC_INGEST}
+      RAG_REFRESH_SECONDS: ${RAG_REFRESH_SECONDS}
+      CHROMADB_HOST: chromadb
+      CHROMADB_PORT: 8000
+      CONTENT_SERVICE_URL: http://content-service:${CONTENT_SERVICE_PORT}
+      COMPLAINT_SERVICE_URL: http://complaint-service:${COMPLAINT_SERVICE_PORT}
       PORT: ${CHATBOT_SERVICE_PORT}
     ports:
       - "${CHATBOT_SERVICE_PORT}:${CHATBOT_SERVICE_PORT}"
     networks:
       - infra-net
       - chatbot-net
+      - content-net
+      - complaint-net
     depends_on:
       rabbitmq:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+      content-service:
+        condition: service_healthy
+      complaint-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${CHATBOT_SERVICE_PORT}/health')"]
@@ -389,4 +427,6 @@ volumes:
   minio_data:
     driver: local
   redis_data:
+    driver: local
+  chromadb_data:
     driver: local

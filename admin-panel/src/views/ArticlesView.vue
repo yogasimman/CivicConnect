@@ -87,7 +87,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import api from '../api'
 
@@ -97,6 +97,7 @@ const articles = ref([])
 const articleCategories = ref([])
 const search = ref('')
 const categoryFilter = ref('')
+let articlesPollId = null
 
 const filteredArticles = computed(() => {
   return articles.value.filter(a => {
@@ -144,5 +145,15 @@ async function loadCategories() {
 onMounted(() => {
   loadArticles()
   loadCategories()
+  articlesPollId = window.setInterval(() => {
+    loadArticles()
+  }, 12000)
+})
+
+onBeforeUnmount(() => {
+  if (articlesPollId) {
+    window.clearInterval(articlesPollId)
+    articlesPollId = null
+  }
 })
 </script>
